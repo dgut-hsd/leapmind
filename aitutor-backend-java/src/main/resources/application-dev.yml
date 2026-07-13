@@ -10,6 +10,13 @@ spring:
       connection-timeout: 30000
       idle-timeout: 600000
       max-lifetime: 1800000
+  flyway:
+    # 开发环境可启用 clean（仅限本地开发！）
+    clean-disabled: false
+    # 显示详细迁移日志
+    out-of-order: false
+    # SQL迁移文件编码
+    encoding: UTF-8
 
 # MyBatis-Plus配置 - 开发环境特定配置
 mybatis-plus:
@@ -33,9 +40,7 @@ logging:
     # Spring配置属性日志
     org.springframework.boot.context.properties: DEBUG
 
-# ==========================================
 # 开发环境下的文本润色配置
-# ==========================================
 # 开发环境可以使用不同的配置参数来便于调试和测试
 text-polishing:
   # 开发环境保持功能启用，便于测试

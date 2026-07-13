@@ -10,6 +10,14 @@ spring:
       connection-timeout: 30000
       idle-timeout: 600000
       max-lifetime: 1800000
+  flyway:
+    # 生产环境必须禁止自动清理（保护数据安全）
+    clean-disabled: true
+    # 严格按版本顺序执行，不允许乱序
+    out-of-order: false
+    # 迁移前验证，及早发现文件损坏
+    validate-on-migrate: true
+    encoding: UTF-8
 
 # MyBatis-Plus配置 - 生产环境
 mybatis-plus:
@@ -26,12 +34,12 @@ logging:
     com.treepeople.leapmindtts: INFO
     # 文本润色服务使用WARN级别，只记录重要信息
     com.treepeople.leapmindtts.service.TextPolishingService: WARN
+    # Flyway 迁移日志 - 生产环境只记录警告和错误
+    org.flywaydb: WARN
     # Spring框架日志保持WARN级别
     org.springframework: WARN
 
-# ==========================================
 # 生产环境下的文本润色配置
-# ==========================================
 # 生产环境优化配置，注重性能和稳定性
 text-polishing:
   # 生产环境默认启用润色功能
