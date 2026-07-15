@@ -61,6 +61,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         // 允许所有用户访问教育阶段查询接口
                         .requestMatchers("/api/education/**").permitAll()
+                        // 允许访问 API 文档
+                        .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/doc.html", "/webjars/**").permitAll()
                         // 允许访问静态资源
                         .requestMatchers("/static/**", "/*.html", "/*.js", "/*.css", "/admin/**", "/css/**", "/js/**", "/image/**").permitAll()
                         // 允许访问短信测试接口

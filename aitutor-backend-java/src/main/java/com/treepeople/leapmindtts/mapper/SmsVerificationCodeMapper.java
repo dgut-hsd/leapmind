@@ -6,7 +6,6 @@ import com.treepeople.leapmindtts.pojo.entity.SmsVerificationCode;
 import org.apache.ibatis.annotations.Mapper;
 
 /**
- * @ Author：YangYu
  * @ Package：com.treepeople.leapmindtts.mapper
  * @ Project：leapmind-tts - 语音分段
  * @ Description:

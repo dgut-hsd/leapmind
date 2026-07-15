@@ -1,7 +1,6 @@
 package com.treepeople.leapmindtts.pojo.enums;
 
 /**
- * @ Author：YangYu
  * @ Package：com.treepeople.leapmindtts.pojo.enums
  * @ Project：leapMind-java
  * @ Description:

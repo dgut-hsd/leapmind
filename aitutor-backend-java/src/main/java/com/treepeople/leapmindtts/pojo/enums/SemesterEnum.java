@@ -3,7 +3,6 @@ package com.treepeople.leapmindtts.pojo.enums;
 import lombok.Getter;
 
 /**
- * @ Author：YangYu
  * @ Package：com.treepeople.leapmindtts.pojo.enums
  * @ Project：leapmind-tts - 语音分段
  * @ Description:

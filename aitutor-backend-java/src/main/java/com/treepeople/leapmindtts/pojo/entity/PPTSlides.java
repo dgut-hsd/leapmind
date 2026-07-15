@@ -7,7 +7,6 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * @ Author：YangYu
  * @ Package：com.treepeople.leapmindtts.pojo.entity
  * @ Project：leapMind-java
  * @ Description:

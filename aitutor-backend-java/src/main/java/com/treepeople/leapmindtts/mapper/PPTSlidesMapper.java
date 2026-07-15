@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.treepeople.leapmindtts.pojo.entity.PPTSlides;
 
 /**
- * @ Author：YangYu
  * @ Package：com.treepeople.leapmindtts.mapper
  * @ Project：leapMind-java
  * @ Description:

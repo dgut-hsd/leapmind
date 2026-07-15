@@ -1,4 +1,4 @@
-package com.treepeople.leapmindtts.controller.Admin;
+package com.treepeople.leapmindtts.controller.admin;
 
 import com.treepeople.leapmindtts.annotation.AdminRequired;
 import com.treepeople.leapmindtts.pojo.dto.CourseCreateRequest;
@@ -6,7 +6,7 @@ import com.treepeople.leapmindtts.pojo.dto.CourseSectionDTO;
 import com.treepeople.leapmindtts.pojo.dto.CourseUpdateRequest;
 import com.treepeople.leapmindtts.pojo.result.ApiResponse;
 import com.treepeople.leapmindtts.pojo.vo.CourseVO;
-import com.treepeople.leapmindtts.service.CourseService;
+import com.treepeople.leapmindtts.service.admin.CourseService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,7 +18,6 @@ import java.util.List;
 /**
  * 管理员课程管理控制器
  *
- * @ Author：YangYu
  * @ Package：com.treepeople.leapmindtts.controller
  * @ Project：leapMind-java
  * @ Description: 提供课程的增删改查功能

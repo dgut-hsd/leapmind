@@ -3,7 +3,7 @@ package com.treepeople.leapmindtts.util;
 import java.util.Random;
 
 /**
- * @ Author：YangYu
+ *  
  * @ Package：com.treepeople.leapmindtts.util
  * @ Project：leapmind-tts - 语音分段
  * @ Description:

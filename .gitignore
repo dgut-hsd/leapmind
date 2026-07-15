@@ -8,5 +8,7 @@ target/
 .vscode/
 *.iml
 
-# Maven Wrapper（建议保留 wrapper jar，按需调整）
+# Maven Wrapper
 .mvn/
+
+.claude/

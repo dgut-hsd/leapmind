@@ -5,7 +5,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * @ Author：YangYu
+ *  
  * @ Package：com.treepeople.leapmindtts.pojo.dto
  * @ Project：leapmind-tts
  * @ Description: 润色指标模型，用于记录润色过程的性能数据

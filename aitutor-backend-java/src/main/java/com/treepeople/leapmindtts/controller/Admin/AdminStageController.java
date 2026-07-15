@@ -1,4 +1,4 @@
-package com.treepeople.leapmindtts.controller.Admin;
+package com.treepeople.leapmindtts.controller.admin;
 
 import com.treepeople.leapmindtts.annotation.AdminRequired;
 import com.treepeople.leapmindtts.pojo.dto.CreateEducationStageDTO;
@@ -7,20 +7,18 @@ import com.treepeople.leapmindtts.pojo.dto.StageInfoDTO;
 import com.treepeople.leapmindtts.pojo.dto.UpdateEducationStageDTO;
 import com.treepeople.leapmindtts.pojo.entity.EducationStage;
 import com.treepeople.leapmindtts.pojo.result.ApiResponse;
-import com.treepeople.leapmindtts.service.StageManagementService;
+import com.treepeople.leapmindtts.service.admin.StageManagementService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-
 import java.util.List;
 
 /**
  * 管理员阶段和年级管理控制器
- * 
- * @ Author：YangYu
+ *
  * @ Package：com.treepeople.leapmindtts.controller
  * @ Project：leapMind-java
  * @ Description: 提供阶段和年级的增删改查功能
@@ -129,7 +127,7 @@ public class AdminStageController {
     @AdminRequired(message = "更新教育阶段需要管理员权限")
     @PutMapping("/education-stages/{id}")
     public ResponseEntity<ApiResponse<EducationStage>> updateEducationStage(
-            @PathVariable Long id, 
+            @PathVariable Long id,
             @Valid @RequestBody UpdateEducationStageDTO updateDTO) {
         log.info("管理员更新教育阶段: ID={}, 名称={}", id, updateDTO.getStageName());
         EducationStage updated = stageManagementService.updateEducationStage(id, updateDTO);

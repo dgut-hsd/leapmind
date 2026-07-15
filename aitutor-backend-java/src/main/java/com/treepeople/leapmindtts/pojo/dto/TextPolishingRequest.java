@@ -5,7 +5,6 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * @ Author：YangYu
  * @ Package：com.treepeople.leapmindtts.pojo.dto
  * @ Project：leapmind-tts
  * @ Description: 文本润色请求模型，包含原始文本和润色参数

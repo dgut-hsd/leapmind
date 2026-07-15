@@ -1,20 +1,18 @@
-package com.treepeople.leapmindtts.controller.Admin;
+package com.treepeople.leapmindtts.controller.admin;
 
 import com.treepeople.leapmindtts.pojo.dto.AdminReviewRequest;
 import com.treepeople.leapmindtts.pojo.dto.BulkSynthesisResponse;
-import com.treepeople.leapmindtts.pojo.dto.ReviewRequest;
 import com.treepeople.leapmindtts.pojo.dto.ReviewResponse;
 import com.treepeople.leapmindtts.pojo.entity.LessonSession;
-import com.treepeople.leapmindtts.service.BulkSpeechService;
+import com.treepeople.leapmindtts.service.admin.BulkSpeechService;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
-
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
 
 import java.util.List;
 
@@ -63,25 +61,25 @@ public class AdminReviewController {
             return ResponseEntity.internalServerError().build();
         }
     }
-    
+
 
     /*@PostMapping("/api/sessions/{courseId}/review")
     @ResponseBody
     public ResponseEntity<ReviewResponse> reviewSession(
-            @PathVariable @NotBlank String courseId, 
+            @PathVariable @NotBlank String courseId,
             @Valid @RequestBody ReviewRequest request) {
-        
-        log.info("管理后台审核会话，会话ID: {}, 审核人: {}, 结果: {}", 
+
+        log.info("管理后台审核会话，会话ID: {}, 审核人: {}, 结果: {}",
                 courseId, request.getReviewerId(), request.getApproved());
-        
+
         try {
             ReviewResponse response = bulkSpeechService.reviewSession(
-                    courseId, 
-                    request.getReviewerId(), 
-                    request.getApproved(), 
+                    courseId,
+                    request.getReviewerId(),
+                    request.getApproved(),
                     request.getComments()
             );
-            
+
             log.info("管理后台会话审核完成，会话ID: {}, 状态: {}", courseId, response.getStatus());
             return ResponseEntity.ok(response);
         } catch (Exception e) {

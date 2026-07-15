@@ -1,7 +1,7 @@
 package com.treepeople.leapmindtts.sms.api;
 
 /**
- * @ Author：YangYu
+ *  
  * @ Package：com.treepeople.leapmindtts.sms.api
  * @ Project：leapmind-tts - 语音分段
  * @ Description:

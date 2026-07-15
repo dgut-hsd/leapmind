@@ -220,6 +220,19 @@
             <artifactId>flyway-mysql</artifactId>
         </dependency>
 
+        <!-- SpringDoc OpenAPI 3 (Swagger) -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.2.0</version>
+        </dependency>
+
+        <!-- Knife4j 美化文档页面 -->
+        <dependency>
+            <groupId>com.github.xiaoymin</groupId>
+            <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
+            <version>4.4.0</version>
+        </dependency>
 
     </dependencies>
 

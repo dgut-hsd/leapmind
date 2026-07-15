@@ -19,7 +19,7 @@ import java.util.HashMap;
 import static com.alibaba.fastjson2.JSON.toJSONString;
 
 /**
- * @ Author：YangYu
+ *  
  * @ Package：PACKAGE_NAME
  * @ Project：leapmind-tts - 语音分段
  * @ Description:

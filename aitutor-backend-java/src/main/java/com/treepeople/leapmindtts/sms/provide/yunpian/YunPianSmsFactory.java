@@ -1,7 +1,7 @@
 package com.treepeople.leapmindtts.sms.provide.yunpian;
 
 /**
- * @ Author：YangYu
+ *  
  * @ Package：com.treepeople.leapmindtts.sms.provide.yunpian
  * @ Project：leapmind-tts - 语音分段
  * @ Description:

@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.treepeople.leapmindtts.pojo.entity.CourseSection;
 
 /**
- * @ Author：YangYu
  * @ Package：com.treepeople.leapmindtts.mapper
  * @ Project：leapmind-tts - 语音分段
  * @ Description:

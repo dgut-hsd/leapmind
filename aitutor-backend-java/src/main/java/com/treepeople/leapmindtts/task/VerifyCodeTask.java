@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * @ Author：YangYu
+ *  
  * @ Package：com.treepeople.leapmindtts.task
  * @ Project：leapmind-tts - 语音分段
  * @ Description: 验证码定时任务处理类

@@ -1,4 +1,4 @@
-package com.treepeople.leapmindtts.controller.Admin;
+package com.treepeople.leapmindtts.controller.admin;
 
 
 import com.treepeople.leapmindtts.annotation.AdminRequired;
@@ -6,18 +6,16 @@ import com.treepeople.leapmindtts.pojo.dto.PptSlideCreateRequest;
 import com.treepeople.leapmindtts.pojo.dto.PptSlideUpdateRequest;
 import com.treepeople.leapmindtts.pojo.entity.PptSlide;
 import com.treepeople.leapmindtts.pojo.result.ApiResponse;
-import com.treepeople.leapmindtts.service.PptSlideService;
+import com.treepeople.leapmindtts.service.admin.PptSlideService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.web.bind.annotation.*;
 
-
 import java.util.List;
 
 /**
- * @ Author：YangYu
  * @ Package：com.treepeople.leapmindtts.controller.Admin
  * @ Project：leapMind-java
  * @ Description: PPT幻灯片管理控制器
@@ -28,12 +26,12 @@ import java.util.List;
 @RequestMapping("api/admin/ppt")
 @RequiredArgsConstructor
 public class AdminPPTController {
-    
+
     private final PptSlideService pptSlideService;
-    
+
     /**
      * 查询所有幻灯片
-     * 
+     *
      * @return 幻灯片列表
      */
     @AdminRequired(message = "查询幻灯片列表需要管理员权限")
@@ -48,10 +46,10 @@ public class AdminPPTController {
             return ApiResponse.error("查询失败: " + e.getMessage());
         }
     }
-    
+
     /**
      * 根据项目ID查询幻灯片
-     * 
+     *
      * @param courseId 项目ID
      * @return 幻灯片列表
      */
@@ -67,10 +65,10 @@ public class AdminPPTController {
             return ApiResponse.error("查询失败: " + e.getMessage());
         }
     }
-    
+
     /**
      * 根据ID查询单个幻灯片
-     * 
+     *
      * @param id 幻灯片ID
      * @return 幻灯片信息
      */
@@ -89,10 +87,10 @@ public class AdminPPTController {
             return ApiResponse.error("查询失败: " + e.getMessage());
         }
     }
-    
+
     /**
      * 创建幻灯片
-     * 
+     *
      * @param request 幻灯片创建请求
      * @return 创建结果
      */
@@ -103,7 +101,7 @@ public class AdminPPTController {
         try {
             PptSlide pptSlide = new PptSlide();
             BeanUtils.copyProperties(request, pptSlide);
-            
+
             boolean success = pptSlideService.createSlide(pptSlide);
             if (success) {
                 return ApiResponse.success(pptSlide, "创建成功");
@@ -115,10 +113,10 @@ public class AdminPPTController {
             return ApiResponse.error("创建失败: " + e.getMessage());
         }
     }
-    
+
     /**
      * 更新幻灯片
-     * 
+     *
      * @param id 幻灯片ID
      * @param request 幻灯片更新请求
      * @return 更新结果
@@ -133,11 +131,11 @@ public class AdminPPTController {
             if (existingSlide == null) {
                 return ApiResponse.error(404, "幻灯片不存在");
             }
-            
+
             PptSlide pptSlide = new PptSlide();
             BeanUtils.copyProperties(request, pptSlide);
             pptSlide.setId(id);
-            
+
             boolean success = pptSlideService.updateSlide(pptSlide);
             if (success) {
                 // 返回更新后的数据
@@ -151,10 +149,10 @@ public class AdminPPTController {
             return ApiResponse.error("更新失败: " + e.getMessage());
         }
     }
-    
+
     /**
      * 删除幻灯片
-     * 
+     *
      * @param id 幻灯片ID
      * @return 删除结果
      */
@@ -168,7 +166,7 @@ public class AdminPPTController {
             if (existingSlide == null) {
                 return ApiResponse.error(404, "幻灯片不存在");
             }
-            
+
             boolean success = pptSlideService.deleteSlide(id);
             if (success) {
                 return ApiResponse.success(null, "删除成功");

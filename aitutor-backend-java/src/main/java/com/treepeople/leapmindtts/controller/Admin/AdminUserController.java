@@ -1,11 +1,12 @@
-package com.treepeople.leapmindtts.controller.Admin;
+package com.treepeople.leapmindtts.controller.admin;
 
 import com.treepeople.leapmindtts.annotation.AdminRequired;
-import com.treepeople.leapmindtts.pojo.dto.*;
+import com.treepeople.leapmindtts.pojo.dto.UserRegisterRequest;
+import com.treepeople.leapmindtts.pojo.dto.UserUpdateRequest;
 import com.treepeople.leapmindtts.pojo.entity.User;
 import com.treepeople.leapmindtts.pojo.result.ApiResponse;
 import com.treepeople.leapmindtts.pojo.vo.UserVO;
-import com.treepeople.leapmindtts.service.UserService;
+import com.treepeople.leapmindtts.service.user.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -81,7 +82,7 @@ public class AdminUserController {
      */
     @AdminRequired(message = "更新用户信息需要管理员权限")
     @PutMapping("/users/{id}")
-    public ResponseEntity<ApiResponse<UserVO>> updateUser(@PathVariable Long id, 
+    public ResponseEntity<ApiResponse<UserVO>> updateUser(@PathVariable Long id,
                                                          @Valid @RequestBody UserUpdateRequest request) {
         log.info("管理员更新用户信息: {}", id);
         UserVO userVO = userService.updateUser(id, request);

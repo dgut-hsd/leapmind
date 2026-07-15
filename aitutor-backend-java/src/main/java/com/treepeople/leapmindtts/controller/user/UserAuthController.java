@@ -1,18 +1,14 @@
-package com.treepeople.leapmindtts.controller;
+package com.treepeople.leapmindtts.controller.user;
 
-import ch.qos.logback.core.joran.util.beans.BeanUtil;
-import com.alibaba.fastjson2.JSON;
-import com.aliyun.dysmsapi20170525.models.SendSmsRequest;
 import com.aliyun.dysmsapi20170525.models.SendSmsResponse;
 import com.treepeople.leapmindtts.pojo.dto.*;
-import com.treepeople.leapmindtts.pojo.entity.SMVCodeConfigModel;
 import com.treepeople.leapmindtts.pojo.entity.User;
 import com.treepeople.leapmindtts.pojo.result.ApiResponse;
 import com.treepeople.leapmindtts.pojo.vo.UserVO;
-import com.treepeople.leapmindtts.service.SmsConfigService;
-import com.treepeople.leapmindtts.service.SmsVerificationCodeService;
-import com.treepeople.leapmindtts.service.UserService;
-import com.treepeople.leapmindtts.util.AuthCodeUtil;
+import com.treepeople.leapmindtts.service.user.SmsVerificationCodeService;
+import com.treepeople.leapmindtts.service.user.UserService;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.OkHttpClient;
@@ -22,11 +18,7 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.Valid;
-
 import java.io.IOException;
-import java.util.HashMap;
 
 /**
  * 用户认证控制器

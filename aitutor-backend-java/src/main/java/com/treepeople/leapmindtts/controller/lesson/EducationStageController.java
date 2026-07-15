@@ -1,13 +1,16 @@
-package com.treepeople.leapmindtts.controller;
+package com.treepeople.leapmindtts.controller.lesson;
 
+import com.treepeople.leapmindtts.pojo.result.ApiResponse;
 import com.treepeople.leapmindtts.pojo.vo.EducationStageVO;
 import com.treepeople.leapmindtts.pojo.vo.GradeVO;
-import com.treepeople.leapmindtts.pojo.result.ApiResponse;
-import com.treepeople.leapmindtts.service.EducationStageService;
+import com.treepeople.leapmindtts.service.lesson.EducationStageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
@@ -20,12 +23,12 @@ import java.util.List;
 @RequestMapping("/api/education")
 @RequiredArgsConstructor
 public class EducationStageController {
-    
+
     private final EducationStageService educationStageService;
-    
+
     /**
      * 查询所有教育阶段
-     * 
+     *
      * @return 教育阶段列表
      */
     @GetMapping("/stages")
@@ -39,10 +42,10 @@ public class EducationStageController {
                     .body(ApiResponse.error(400, e.getMessage()));
         }
     }
-    
+
     /**
      * 根据阶段代码查询年级列表
-     * 
+     *
      * @param stageCode 阶段代码
      * @return 年级列表
      */

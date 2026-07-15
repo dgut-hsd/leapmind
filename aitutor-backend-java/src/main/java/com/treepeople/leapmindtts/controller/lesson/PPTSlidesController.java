@@ -1,9 +1,8 @@
-package com.treepeople.leapmindtts.controller;
+package com.treepeople.leapmindtts.controller.lesson;
 
 import com.treepeople.leapmindtts.pojo.result.ApiResponse;
-import com.treepeople.leapmindtts.pojo.vo.EducationStageVO;
 import com.treepeople.leapmindtts.pojo.vo.PPTSlidesVO;
-import com.treepeople.leapmindtts.service.PPTSlidesService;
+import com.treepeople.leapmindtts.service.lesson.PPTSlidesService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -15,7 +14,6 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * @ Author：YangYu
  * @ Package：com.treepeople.leapmindtts.controller
  * @ Project：leapMind-java
  * @ Description:

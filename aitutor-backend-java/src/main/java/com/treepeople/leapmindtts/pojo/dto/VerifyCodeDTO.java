@@ -3,7 +3,6 @@ package com.treepeople.leapmindtts.pojo.dto;
 import lombok.Data;
 
 /**
- * @ Author：YangYu
  * @ Package：com.treepeople.leapmindtts.pojo.dto
  * @ Project：leapmind-tts - 语音分段
  * @ Description:

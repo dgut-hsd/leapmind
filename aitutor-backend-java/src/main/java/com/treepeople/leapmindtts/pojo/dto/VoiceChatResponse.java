@@ -4,7 +4,6 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 
 /**
- * @ Author：YangYu
  * @ Package：com.treepeople.leapmindtts.pojo.dto
  * @ Project：leapmind-tts - 语音对话
  * @ Description: 语音对话响应

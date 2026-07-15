@@ -1,11 +1,11 @@
-package com.treepeople.leapmindtts.controller.Admin;
+package com.treepeople.leapmindtts.controller.admin;
 
 import com.treepeople.leapmindtts.annotation.AdminRequired;
 import com.treepeople.leapmindtts.pojo.dto.AudioSegmentRequest;
 import com.treepeople.leapmindtts.pojo.entity.AudioSegment;
 import com.treepeople.leapmindtts.pojo.result.ApiResponse;
-import com.treepeople.leapmindtts.service.AudioSegmentService;
-import com.treepeople.leapmindtts.service.LessonSessionService;
+import com.treepeople.leapmindtts.service.admin.AudioSegmentService;
+import com.treepeople.leapmindtts.service.admin.LessonSessionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 /**
- * @ Author：YangYu
  * @ Package：com.treepeople.leapmindtts.controller.Admin
  * @ Project：leapMind-java
  * @ Description: 管理员音频片段管理控制器

@@ -7,7 +7,6 @@ import lombok.NoArgsConstructor;
 import org.springframework.boot.context.properties.NestedConfigurationProperty;
 
 /**
- * @ Author：YangYu
  * @ Package：com.treepeople.leapmindtts.pojo.vo
  * @ Project：leapmind-tts - 语音分段
  * @ Description:
