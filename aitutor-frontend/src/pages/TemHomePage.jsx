@@ -469,61 +469,59 @@ export default function LearningApp({ onOpenProfile, onEnterProject }) {
   return (
     <div className="min-h-screen w-full bg-gradient-to-br from-purple-700 via-purple-600 via-blue-600 via-blue-700 to-blue-900 text-white overflow-hidden" style={{backgroundImage: "linear-gradient(135deg, #861FCE 0%, #861FCE 16%, #731CCD 16%, #731CCD 32%, #6B1CCF 32%, #6B1CCF 48%, #631DCE 48%, #631DCE 64%, #5A1BCE 64%, #5A1BCE 80%,rgb(86, 43, 205) 80%,rgb(47, 8, 154) 100%)"}}>
       <style>{scrollbarStyles}</style>
-      <header className="px-10 py-6 flex items-center justify-between border-b border-purple-400/20">
-        <div className="flex items-center gap-4">
-          <span className="text-sm font-semibold text-purple-200/70 tracking-wide">LeapMind</span>
-          <nav className="flex gap-10 ml-16 items-center">
+      <header className="px-8 py-4 flex items-center justify-between border-b border-purple-400/20">
+        <div className="flex items-center gap-6">
+          <span className="text-sm font-bold text-white/80 tracking-wide">LeapMind</span>
+          <nav className="flex gap-6 items-center">
             {subjects.map((subject) => (
               <button
                 key={subject}
                 onClick={() => {
                   setSelectedSubject(subject)
-                  // 切换科目时重置单元选择，会在 useEffect 中自动选择第一个
                   setSelectedUnit("")
                 }}
-                className={`transition duration-300 font-medium tracking-wide flex items-center cursor-pointer border-none bg-transparent ${
-                  selectedSubject === subject
-                    ? "text-white font-black text-3xl drop-shadow-md"
-                    : "text-purple-100/60 text-2xl hover:text-purple-100/90"
-                }`}
+                className={`transition duration-200 font-medium cursor-pointer border-none bg-transparent
+                  ${selectedSubject === subject
+                    ? "text-white text-base"
+                    : "text-white/50 text-sm hover:text-white/80"}`}
               >
                 {subject}
               </button>
             ))}
           </nav>
         </div>
-        <div className="relative inline-flex items-center gap-4">
+        <div className="flex items-center gap-3">
           {/* 学期选择器 */}
-          <div className="relative">
-            <div className="inline-flex items-center rounded-full bg-[#A286FF]/40 p-1 shadow-lg">
-              <button
-                onClick={() => setSelectedSemester(SEMESTER.FIRST)}
-                className={`px-5 py-2 rounded-full text-sm font-semibold transition-all duration-300 ${selectedSemester === SEMESTER.FIRST ? 'bg-[#A286FF] text-white shadow-lg' : 'bg-[#A286FF]/20 text-white/90 hover:bg-[#A286FF]/40'}`}
-              >
-                上册
-              </button>
-              <button
-                onClick={() => setSelectedSemester(SEMESTER.SECOND)}
-                className={`px-5 py-2 rounded-full text-sm font-semibold transition-all duration-300 ${selectedSemester === SEMESTER.SECOND ? 'bg-[#A286FF] text-white shadow-lg' : 'bg-[#A286FF]/20 text-white/90 hover:bg-[#A286FF]/40'}`}
-              >
-                下册
-              </button>
-            </div>
+          <div className="inline-flex items-center rounded-full bg-white/10 p-0.5 backdrop-blur-sm">
+            <button
+              onClick={() => setSelectedSemester(SEMESTER.FIRST)}
+              className={`px-3.5 py-1 rounded-full text-xs font-medium transition-all duration-200 cursor-pointer
+                ${selectedSemester === SEMESTER.FIRST ? 'bg-white text-purple-700 shadow-sm' : 'text-white/60 hover:text-white hover:bg-white/10'}`}
+            >
+              上册
+            </button>
+            <button
+              onClick={() => setSelectedSemester(SEMESTER.SECOND)}
+              className={`px-3.5 py-1 rounded-full text-xs font-medium transition-all duration-200 cursor-pointer
+                ${selectedSemester === SEMESTER.SECOND ? 'bg-white text-purple-700 shadow-sm' : 'text-white/60 hover:text-white hover:bg-white/10'}`}
+            >
+              下册
+            </button>
           </div>
 
           {/* 年级选择器 */}
-          <div className="relative inline-flex items-center">
+          <div className="relative flex items-center gap-2">
             <button
               onClick={() => setIsGradeOpen(!isGradeOpen)}
-              className="px-8 py-3 pr-10 rounded-l-full bg-[#A286FF] flex items-center gap-2 shadow-lg hover:shadow-2xl transition-all duration-300 font-semibold text-white text-base"
+              className="px-3.5 py-1.5 rounded-full bg-white/10 backdrop-blur-sm flex items-center gap-1.5 transition-all duration-200 text-white/80 text-xs cursor-pointer hover:bg-white/20"
             >
-              <ChevronDown className={`w-5 h-5 transition-transform duration-300 ${isGradeOpen ? "rotate-180" : ""}`} />
               <span>{selectedGrade ? selectedGrade.gradeName : '选择年级'}</span>
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isGradeOpen ? "rotate-180" : ""}`} />
             </button>
             <img 
               src="./login/avatar.png" 
               alt="User Avatar"
-              className="w-12 h-12 rounded-full shadow-md -ml-5 relative z-10 object-cover cursor-pointer hover:ring-2 hover:ring-white/70"
+              className="w-8 h-8 rounded-full shadow-sm object-cover cursor-pointer hover:ring-2 hover:ring-white/60 transition-all duration-200"
               onClick={() => onOpenProfile && onOpenProfile()}
               title="个人主页"
             />
