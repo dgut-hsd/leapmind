@@ -1,5 +1,7 @@
 package com.treepeople.leapmindtts.controller.explain;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.treepeople.leapmindtts.pojo.dto.GenerateExplainRequest;
 import com.treepeople.leapmindtts.pojo.dto.PhotoQARequest;
 import com.treepeople.leapmindtts.pojo.result.ApiResponse;
@@ -14,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 
 import java.time.Duration;
+import java.util.Map;
 
 /**
  * 答疑/讲题 SSE 流式控制器
@@ -30,6 +33,7 @@ public class ExplainController {
 
     private final ExplainService explainService;
     private final InterruptRegistry interruptRegistry;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
      * 拍照答疑 SSE 流式接口
@@ -83,6 +87,9 @@ public class ExplainController {
      */
     private Flux<String> createInterruptibleStream(String generateId, Flux<String> aiStream) {
         return Flux.<String>create(sink -> {
+            // 首事件：发送 generateId 供前端打断使用
+            sink.next(toJson(Map.of("type", "start", "generateId", generateId)));
+
             // 订阅 AI 流
             var disposable = aiStream
                     .doOnNext(data -> {
@@ -96,7 +103,10 @@ public class ExplainController {
                     })
                     .doOnError(error -> {
                         log.error("AI 流异常: generateId={}, error={}", generateId, error.getMessage());
-                        sink.next("{\"type\":\"error\",\"message\":\"生成失败：" + error.getMessage() + "\"}");
+                        sink.next(toJson(Map.of(
+                                "type", "error",
+                                "message", "生成失败：" + error.getMessage()
+                        )));
                         sink.complete();
                         interruptRegistry.unregister(generateId);
                     })
@@ -112,5 +122,15 @@ public class ExplainController {
             });
 
         }).take(Duration.ofSeconds(120));  // 最大 120 秒超时
+    }
+
+    /** 安全 JSON 序列化，避免手拼注入 */
+    private String toJson(Map<String, Object> map) {
+        try {
+            return objectMapper.writeValueAsString(map);
+        } catch (JsonProcessingException e) {
+            log.error("JSON 序列化失败", e);
+            return "{\"type\":\"error\",\"message\":\"内部错误\"}";
+        }
     }
 }

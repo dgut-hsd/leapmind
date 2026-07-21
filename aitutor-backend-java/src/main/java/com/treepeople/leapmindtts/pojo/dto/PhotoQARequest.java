@@ -20,6 +20,7 @@ public class PhotoQARequest {
 
     /** OCR识别后的题目结构化信息 */
     @NotNull(message = "题目信息不能为空")
+    @Valid
     private QuestionInfo question;
 
     /** 用户画像（可选，从 M6 获取） */
