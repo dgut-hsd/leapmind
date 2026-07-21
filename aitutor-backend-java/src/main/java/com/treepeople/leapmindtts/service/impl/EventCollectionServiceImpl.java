@@ -74,7 +74,7 @@ public class EventCollectionServiceImpl implements EventCollectionService {
 
     /**
      * 批量采集事件数据
-     * <p>逐条插入，每条独立 commit 失败不影响其他。适用场景：模块批量同步历史数据</p>
+     * <p>整个批量操作在一个事务中，全部成功或全部回滚。适用场景：模块批量同步历史数据</p>
      */
     @Override
     @Transactional

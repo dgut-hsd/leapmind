@@ -1,7 +1,6 @@
 package com.treepeople.leapmindtts.task;
 
 import com.treepeople.leapmindtts.config.PythonServiceProperties;
-import com.treepeople.leapmindtts.mapper.EventCollectionMapper;
 import com.treepeople.leapmindtts.mapper.ReviewReminderMapper;
 import com.treepeople.leapmindtts.pojo.entity.ReviewReminder;
 import lombok.RequiredArgsConstructor;
@@ -52,7 +51,6 @@ public class ReviewCalculationTask {
     private final WebClient webClient;
     private final PythonServiceProperties pythonServiceProperties;
     private final ReviewReminderMapper reviewReminderMapper;
-    private final EventCollectionMapper eventCollectionMapper;
 
     /**
      * 全量复习计算
