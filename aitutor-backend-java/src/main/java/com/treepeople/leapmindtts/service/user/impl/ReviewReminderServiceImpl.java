@@ -82,7 +82,7 @@ public class ReviewReminderServiceImpl implements ReviewReminderService {
         }
 
         // 2. 校验记录归属权，防止越权操作
-        if (!reminder.getUserId().equals(userId)) {
+        if (!java.util.Objects.equals(reminder.getUserId(), userId)) {
             throw new IllegalArgumentException("复习提醒不属于当前用户");
         }
 
@@ -112,8 +112,9 @@ public class ReviewReminderServiceImpl implements ReviewReminderService {
         List<ReviewReminder> reviewed = reviewReminderMapper.selectByUserIdAndStatus(userId, 1);
 
         // 合并列表：未复习在前，已复习在后
-        unreviewed.addAll(reviewed);
-        return unreviewed.stream()
+        java.util.ArrayList<ReviewReminder> allReminders = new java.util.ArrayList<>(unreviewed);
+        allReminders.addAll(reviewed);
+        return allReminders.stream()
                 .map(this::convertToVO)
                 .collect(Collectors.toList());
     }
