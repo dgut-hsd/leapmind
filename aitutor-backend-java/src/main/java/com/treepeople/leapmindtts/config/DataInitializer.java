@@ -71,7 +71,7 @@ public class DataInitializer implements CommandLineRunner {
                 userMapper.insert(user);
                 log.debug("创建测试用户: {} ({})", user.getStudentName(), user.getUsername());
             } catch (Exception e) {
-                log.warn("创建用户失败: {}. 原因:", user.getUsername(), e);
+                log.warn("创建用户失败: {}, 错误: {}", user.getUsername(), e.getMessage());
             }
         }
 
