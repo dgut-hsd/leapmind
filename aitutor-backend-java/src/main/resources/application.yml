@@ -211,3 +211,11 @@ knife4j:
     language: zh_cn
     enable-swagger-models: true
     enable-document-manage: true
+
+# Python AI 服务配置（复习计算、事件处理）
+python-service:
+  base-url: http://localhost:8000
+  review-calculation-path: /api/review/calculate-all
+  event-process-path: /api/events/process
+  connect-timeout: 30
+  read-timeout: 300
