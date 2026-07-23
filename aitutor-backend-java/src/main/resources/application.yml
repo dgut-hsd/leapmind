@@ -1,5 +1,14 @@
 server:
   port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health,info,prometheus"
+  endpoint:
+    health:
+      show-details: always
   # Tomcat服务器配置（用于处理WebSocket消息大小）
   tomcat:
     # 设置最大WebSocket消息缓冲区大小
@@ -23,6 +32,19 @@ spring:
       request-timeout: 60000
   main:
     allow-circular-references: true
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      password: ""
+      database: 0
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+          max-wait: 100ms
   flyway:
     enabled: true
     locations: classpath:db/migration
@@ -211,3 +233,31 @@ knife4j:
     language: zh_cn
     enable-swagger-models: true
     enable-document-manage: true
+
+resilience4j:
+  ratelimiter:
+    instances:
+      userQuestionLimiter:
+        limitForPeriod: 10
+        limitRefreshPeriod: 1m
+        timeoutDuration: 0
+        key-resolver: userKeyResolver
+  circuitbreaker:
+    instances:
+      contextCompress:
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+      aiService:
+        slidingWindowSize: 20
+        failureRateThreshold: 30
+        waitDurationInOpenState: 20s
+  timelimiter:
+    instances:
+      contextCompress:
+        timeoutDuration: 10s
+        cancelRunningFuture: true
+      aiService:
+        timeoutDuration: 15s
