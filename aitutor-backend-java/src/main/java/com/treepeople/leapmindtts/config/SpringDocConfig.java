@@ -78,6 +78,18 @@ public class SpringDocConfig {
     }
 
     /**
+     * 备课接口 — PPT模板、备课内容管理
+     */
+    @Bean
+    public GroupedOpenApi lessonPrepApi() {
+        return GroupedOpenApi.builder()
+                .group("5-备课接口")
+                .displayName("备课接口")
+                .pathsToMatch("/api/lesson-prep/**")
+                .build();
+    }
+
+    /**
      * 管理后台接口 — 管理员功能
      */
     @Bean
