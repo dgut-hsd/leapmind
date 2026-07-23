@@ -204,6 +204,13 @@ springdoc:
     operations-sorter: alpha
   default-flat-param-object: true
 
+# Python AI 薄弱点分析服务配置
+weak-point:
+  python-service:
+    base-url: http://localhost:8000
+    analyze-endpoint: /api/weak-points/analyze
+    timeout: 30
+
 # Knife4j 美化文档
 knife4j:
   enable: true
