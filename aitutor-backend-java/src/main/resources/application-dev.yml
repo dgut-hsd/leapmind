@@ -10,6 +10,13 @@ spring:
       connection-timeout: 30000
       idle-timeout: 600000
       max-lifetime: 1800000
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 0
+
   flyway:
     # 开发环境可启用 clean（仅限本地开发！）
     clean-disabled: false
@@ -78,3 +85,53 @@ text-polishing:
     max-text-length: 1000
     # 开发环境保持较小的最小长度，便于测试边界情况
     min-text-length: 1
+
+# Python API anpassenspezifische Konfiguration
+python:
+  api:
+    base-url: http://localhost:8001 # 假设Python服务运行在8001端口
+
+# 上下文压缩特定配置
+context:
+  compress:
+    token-threshold: 4000
+    max-compressed-tokens: 1000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health,info,prometheus"
+  endpoint:
+    health:
+      show-details: always
+
+resilience4j:
+  ratelimiter:
+    instances:
+      userQuestionLimiter:
+        limitForPeriod: 10          # 周期内最大支持请求数
+        limitRefreshPeriod: 1m      # 刷新周期长度
+        timeoutDuration: 0          # 获取令牌超时时长（0代表没拿到直接快速拒绝）
+  circuitbreaker:
+    instances:
+      contextCompress:
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 10       # 统计最近 10 次请求
+        minimumNumberOfCalls: 5     # 最少请求计算阈值
+        failureRateThreshold: 50    # 失败率高于 50% 自动跳开熔断器
+        waitDurationInOpenState: 10s # 熔断等待恢复重试期
+      aiService:
+        slidingWindowSize: 20
+        failureRateThreshold: 30    # AI 核心业务容错率收紧到 30%
+        waitDurationInOpenState: 20s
+  timelimiter:
+    instances:
+      contextCompress:
+        timeoutDuration: 10s        # 超过 10s 不回立即强行打断
+        cancelRunningFuture: true
+      aiService:
+        timeoutDuration: 15s
+
+
+
