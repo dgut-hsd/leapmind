@@ -1,10 +1,13 @@
 package com.treepeople.leapmindtts.controller.lesson;
 
+import com.treepeople.leapmindtts.exception.BizErrorCode;
+import com.treepeople.leapmindtts.pojo.ApiResponse;
 import com.treepeople.leapmindtts.pojo.dto.VoiceChatRequest;
-import com.treepeople.leapmindtts.pojo.dto.VoiceChatResponse;
 import com.treepeople.leapmindtts.pojo.dto.VoiceSynthesisRequest;
+import com.treepeople.leapmindtts.service.common.MetricsService;
 import com.treepeople.leapmindtts.service.lesson.VoiceChatService;
-import jakarta.validation.Valid;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -29,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class VoiceChatController {
 
     private final VoiceChatService voiceChatService;
+    private final MetricsService metricsService;
 
     //use:语音问答接口 111
 
@@ -38,33 +42,44 @@ public class VoiceChatController {
      * 注意：从响应式改为同步调用，解决Spring MVC与WebFlux混用导致的403问题
      */
     @PostMapping("/ask")
-    public ResponseEntity<VoiceChatResponse> handleVoiceChat(
-            @RequestBody @Valid VoiceChatRequest request) {
+    @RateLimiter(name = "userQuestionLimiter", fallbackMethod = "rateLimitFallback", keyResolver = "userKeyResolver")
+    public ApiResponse<String> handleVoiceChat(
+            @RequestBody @Valid VoiceChatRequest request, HttpServletRequest httpRequest) {
+        metricsService.incrementQuestionProcessed("voice_chat", "received");
         log.info("接收到语音对话请求，会话ID: {}, 问题: {}",
                 request.getCourseId(), request.getQuestion());
 
         try {
+            // 从安全上下文中获取用户ID，如果不存在，则传递一个默认值或标识
+            String userId = Optional.ofNullable(SecurityContextHolder.getContext().getAuthentication())
+                                    .map(Authentication::getName)
+                                    .orElse(httpRequest.getRemoteAddr());
+
             // 使用.block()将响应式调用转换为同步调用
-            String answer = voiceChatService.processVoiceChat(request.getCourseId(), request.getQuestion())
+            String answer = voiceChatService.processVoiceChat(userId, request.getQuestion())
                     .block();
 
-            VoiceChatResponse response = new VoiceChatResponse(
-                    answer,
-                    request.getCourseId(),
-                    "SUCCESS"
-            );
             log.info("语音对话处理完成，会话ID: {}, AI回答: {}",
                     request.getCourseId(), answer);
-            return ResponseEntity.ok(response);
+            metricsService.incrementQuestionProcessed("voice_chat", "success");
+            return ApiResponse.success(answer);
 
         } catch (Exception e) {
             log.error("处理语音对话失败", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new VoiceChatResponse(
-                            "处理问题时出现错误：" + e.getMessage(),
-                            request.getCourseId(),
-                            "ERROR"));
+            metricsService.incrementQuestionProcessed("voice_chat", "error");
+            return ApiResponse.error(HttpStatus.INTERNAL_SERVER_ERROR.value(), "处理问题时出现错误：" + e.getMessage());
         }
+    }
+
+    /**
+     * 限流降级方法
+     * 当用户请求过于频繁时，返回此响应
+     */
+    public ApiResponse<String> rateLimitFallback(VoiceChatRequest request, HttpServletRequest httpRequest, Throwable t) {
+        log.warn("触发 Resilience4j 流量限制，请求拒绝。用户标识: {}, 异常信息: {}",
+                 httpRequest.getRemoteAddr(), t.getMessage());
+        metricsService.incrementQuestionProcessed("voice_chat", "rate_limited");
+        return ApiResponse.error(BizErrorCode.RATE_LIMITED.getCode(), BizErrorCode.RATE_LIMITED.getMessage());
     }
 
 
