@@ -52,6 +52,11 @@ public class TeachingContentVO {
     private Long templateId;
 
     /**
+     * PPT导出下载链接
+     */
+    private String pptDownloadUrl;
+
+    /**
      * 创建时间
      */
     private LocalDateTime createdAt;

@@ -61,6 +61,12 @@ public class TeachingContent {
     private Long templateId;
 
     /**
+     * PPT导出下载链接
+     */
+    @TableField("ppt_download_url")
+    private String pptDownloadUrl;
+
+    /**
      * 创建时间
      */
     @TableField(value = "created_at", fill = FieldFill.INSERT)

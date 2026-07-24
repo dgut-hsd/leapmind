@@ -242,7 +242,7 @@ public class TeachingContentController {
             @PathVariable Long prepId) {
         log.info("导出PPT，备课ID: {}", prepId);
         try {
-            String downloadUrl = pptxExportService.export(prepId);
+            String downloadUrl = pptxExportService.exportPptxByPrepId(prepId);
             log.info("PPT导出成功，备课ID: {}，下载URL: {}", prepId, downloadUrl);
             return ResponseEntity.ok(ApiResponse.success(downloadUrl, "导出PPT成功"));
         } catch (Exception e) {
@@ -264,6 +264,7 @@ public class TeachingContentController {
                 .status(content.getStatus())
                 .pptStructure(content.getPptStructure())
                 .templateId(content.getTemplateId())
+                .pptDownloadUrl(content.getPptDownloadUrl())
                 .createdAt(content.getCreatedAt())
                 .updatedAt(content.getUpdatedAt())
                 .build();
