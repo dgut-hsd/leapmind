@@ -264,6 +264,7 @@ public class TeachingContentController {
                 .status(content.getStatus())
                 .pptStructure(content.getPptStructure())
                 .templateId(content.getTemplateId())
+                .pptDownloadUrl(content.getPptDownloadUrl())
                 .createdAt(content.getCreatedAt())
                 .updatedAt(content.getUpdatedAt())
                 .build();
