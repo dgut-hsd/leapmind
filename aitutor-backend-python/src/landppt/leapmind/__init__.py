@@ -1,0 +1,1 @@
+"""LeapMind AI service module"""
