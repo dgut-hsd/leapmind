@@ -207,28 +207,51 @@ function transformRanking(data) {
 
 /**
  * 获取筛选选项  ✅ GET /api/practice/filters
+ * 🔶 后端不可用时回退到 Mock 数据
  */
 export async function getFilterOptions() {
-  const res = await request('/api/practice/filters');
-  return transformFilterOptions(unwrap(res));
+  try {
+    const res = await request('/api/practice/filters');
+    return transformFilterOptions(unwrap(res));
+  } catch (err) {
+    console.warn('[M1] getFilterOptions 后端不可用，使用 Mock:', err.message);
+    await _loadMock();
+    return _mockFilterOptions;
+  }
 }
 
 /**
  * 查询题目列表  ✅ GET /api/practice/questions
  */
 export async function getQuestions(params = {}) {
-  const beParams = {};
-  if (params.subject) beParams.subject = SUBJECT_REVERSE[params.subject] || params.subject;
-  if (params.grade) beParams.gradeLevel = params.grade;
-  if (params.chapter) beParams.chapter = params.chapter;
-  if (params.type) beParams.questionType = TYPE_FE_TO_BE[params.type] || params.type;
-  if (params.difficulty) beParams.difficulty = DIFF_FE_TO_BE[params.difficulty] || params.difficulty;
-  if (params.keyword) beParams.keyword = params.keyword;
-  beParams.page = params.page || 1;
-  beParams.pageSize = params.size || 12;
-
-  const res = await request('/api/practice/questions' + buildQuery(beParams));
-  return transformQuestionList(unwrap(res));
+  try {
+    const beParams = {};
+    if (params.subject) beParams.subject = SUBJECT_REVERSE[params.subject] || params.subject;
+    if (params.grade) beParams.gradeLevel = params.grade;
+    if (params.chapter) beParams.chapter = params.chapter;
+    if (params.type) beParams.questionType = TYPE_FE_TO_BE[params.type] || params.type;
+    if (params.difficulty) beParams.difficulty = DIFF_FE_TO_BE[params.difficulty] || params.difficulty;
+    if (params.keyword) beParams.keyword = params.keyword;
+    beParams.page = params.page || 1;
+    beParams.pageSize = params.size || 12;
+    const res = await request('/api/practice/questions' + buildQuery(beParams));
+    return transformQuestionList(unwrap(res));
+  } catch (err) {
+    // 🔶 后端不可用，回退到 Mock
+    console.warn('[M1] getQuestions 后端不可用，使用 Mock:', err.message);
+    await _loadMock();
+    let list = [..._mockQuestions];
+    if (params.subject) list = list.filter(q => q.subject === params.subject);
+    if (params.grade) list = list.filter(q => q.grade === params.grade);
+    if (params.chapter) list = list.filter(q => q.chapter === params.chapter);
+    if (params.type) list = list.filter(q => q.type === params.type);
+    if (params.difficulty) list = list.filter(q => q.difficulty === Number(params.difficulty));
+    if (params.keyword) list = list.filter(q => (q.content?.stem || '').includes(params.keyword) || q.chapter?.includes(params.keyword));
+    const page = params.page || 1;
+    const size = params.size || 20;
+    const start = (page - 1) * size;
+    return { total: list.length, page, size, items: list.slice(start, start + size) };
+  }
 }
 
 /**
@@ -277,11 +300,18 @@ export async function submitAnswer(params = {}) {
 
 /**
  * 获取排行榜  ✅ GET /api/practice/leaderboards
+ * 🔶 后端不可用时回退到 Mock
  */
 export async function getRanking(type = 'daily', limit = 20) {
-  const res = await request('/api/practice/leaderboards');
-  const list = transformRanking(unwrap(res));
-  return list.slice(0, limit);
+  try {
+    const res = await request('/api/practice/leaderboards');
+    const list = transformRanking(unwrap(res));
+    return list.slice(0, limit);
+  } catch (err) {
+    console.warn('[M1] getRanking 后端不可用，使用 Mock:', err.message);
+    await _loadMock();
+    return (_mockRanking?.daily || []).slice(0, limit);
+  }
 }
 
 /**
@@ -307,24 +337,36 @@ export async function dailyCheckin() {
  * ⚠️ 后端返回不含 correctAnswer / userAnswer / wrongReasonTag，部分字段为兜底值
  */
 export async function getWrongQuestions(params = {}) {
-  const beParams = {};
-  if (params.status) beParams.status = MISTAKE_STATUS_FE_TO_BE[params.status] || params.status;
-  if (params.chapter) beParams.chapter = params.chapter;
-  if (params.kpName) beParams.knowledgePoint = params.kpName;
-
-  const res = await request('/api/practice/mistakes' + buildQuery(beParams));
-  let list = (unwrap(res) || []).map(transformMistake);
-
-  // 前端额外筛选（keyword / subject / timeRange 后端暂不支持）
-  if (params.keyword) list = list.filter(q => q.questionContent?.stem?.includes(params.keyword));
-  if (params.subject) list = list.filter(q => q.subject === params.subject);
-  if (params.timeRange === 'week') list = list.filter(q => new Date(q.createdAt) > new Date(Date.now() - 7 * 86400000));
-  if (params.timeRange === 'month') list = list.filter(q => new Date(q.createdAt) > new Date(Date.now() - 30 * 86400000));
-
-  const page = params.page || 1;
-  const size = params.size || 20;
-  const start = (page - 1) * size;
-  return { total: list.length, page, size, items: list.slice(start, start + size) };
+  try {
+    const beParams = {};
+    if (params.status) beParams.status = MISTAKE_STATUS_FE_TO_BE[params.status] || params.status;
+    if (params.chapter) beParams.chapter = params.chapter;
+    if (params.kpName) beParams.knowledgePoint = params.kpName;
+    const res = await request('/api/practice/mistakes' + buildQuery(beParams));
+    let list = (unwrap(res) || []).map(transformMistake);
+    if (params.keyword) list = list.filter(q => q.questionContent?.stem?.includes(params.keyword));
+    if (params.subject) list = list.filter(q => q.subject === params.subject);
+    if (params.timeRange === 'week') list = list.filter(q => new Date(q.createdAt) > new Date(Date.now() - 7 * 86400000));
+    if (params.timeRange === 'month') list = list.filter(q => new Date(q.createdAt) > new Date(Date.now() - 30 * 86400000));
+    const page = params.page || 1;
+    const size = params.size || 20;
+    const start = (page - 1) * size;
+    return { total: list.length, page, size, items: list.slice(start, start + size) };
+  } catch (err) {
+    // 🔶 后端不可用，回退到 Mock
+    console.warn('[M1] getWrongQuestions 后端不可用，使用 Mock:', err.message);
+    await _loadMock();
+    let list = [..._mockWrongQuestions];
+    if (params.status) list = list.filter(q => q.status === params.status);
+    if (params.keyword) list = list.filter(q => q.questionContent?.stem?.includes(params.keyword));
+    if (params.subject) list = list.filter(q => q.subject === params.subject);
+    if (params.timeRange === 'week') list = list.filter(q => new Date(q.createdAt) > new Date(Date.now() - 7 * 86400000));
+    if (params.timeRange === 'month') list = list.filter(q => new Date(q.createdAt) > new Date(Date.now() - 30 * 86400000));
+    const page = params.page || 1;
+    const size = params.size || 20;
+    const start = (page - 1) * size;
+    return { total: list.length, page, size, items: list.slice(start, start + size) };
+  }
 }
 
 /**
@@ -340,12 +382,19 @@ export async function toggleFocus(wrongQuestionId) {
 /**
  * 获取练习统计  🔶 GET /api/practice/statistics
  * ⚠️ wrongReasons 字段暂空，streakDays 需再调 dashboard
+ * 🔶 后端不可用时回退到 Mock
  */
 export async function getStatistics(params = {}) {
-  const rangeMap = { week: 'week', month: 'month', all: 'all' };
-  const range = rangeMap[params.period || params.range] || 'week';
-  const res = await request('/api/practice/statistics?range=' + range);
-  return transformStatistics(unwrap(res));
+  try {
+    const rangeMap = { week: 'week', month: 'month', all: 'all' };
+    const range = rangeMap[params.period || params.range] || 'week';
+    const res = await request('/api/practice/statistics?range=' + range);
+    return transformStatistics(unwrap(res));
+  } catch (err) {
+    console.warn('[M1] getStatistics 后端不可用，使用 Mock:', err.message);
+    await _loadMock();
+    return _mockStatistics;
+  }
 }
 
 // ============================================================================
@@ -355,11 +404,19 @@ export async function getStatistics(params = {}) {
 // 保留 Mock 数据引用（仅 fallback 阶段使用）
 let _mockQuestions = null;
 let _mockPoints = null;
+let _mockFilterOptions = null;
+let _mockWrongQuestions = null;
+let _mockStatistics = null;
+let _mockRanking = null;
 async function _loadMock() {
   if (!_mockQuestions) {
     const mod = await import('../data/mockPractice');
     _mockQuestions = mod.mockQuestions;
     _mockPoints = mod.mockPoints;
+    _mockFilterOptions = mod.mockFilterOptions;
+    _mockWrongQuestions = mod.mockWrongQuestions;
+    _mockStatistics = mod.mockStatistics;
+    _mockRanking = mod.mockRanking;
   }
 }
 
