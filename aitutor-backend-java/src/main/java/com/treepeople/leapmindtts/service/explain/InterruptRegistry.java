@@ -1,10 +1,12 @@
 package com.treepeople.leapmindtts.service.explain;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.Disposable;
 import reactor.core.publisher.FluxSink;
 
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -22,6 +24,7 @@ public class InterruptRegistry {
 
     /** generateId → 活跃的 SSE 订阅 */
     private final ConcurrentHashMap<String, SubscriptionEntry> activeStreams = new ConcurrentHashMap<>();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
      * 注册一个活跃的流式会话
@@ -53,7 +56,9 @@ public class InterruptRegistry {
 
         // 2. 再发 interrupt 确认事件 + 关闭下游
         try {
-            entry.sink.next("{\"type\":\"interrupt\",\"message\":\"已打断生成\"}");
+            String interruptJson = objectMapper.writeValueAsString(
+                    Map.of("type", "interrupt", "message", "已打断生成"));
+            entry.sink.next(interruptJson);
             entry.sink.complete();
         } catch (Exception e) {
             log.debug("发送 interrupt 事件时 sink 已关闭: {}", e.getMessage());
