@@ -31,7 +31,7 @@ public class PythonAIClient {
      */
     public Flux<String> callStream(AICallRequest request) {
         String url = pythonProps.getBaseUrl() + pythonProps.getStreamPath();
-        log.info("PythonAIClient 流式调用: url={}, module={}, scene={}", url, request.getModuleName(), request.getSceneType());
+        log.info("PythonAIClient 流式调用: url={}, module={}, scene={}", url, request.getModule(), request.getScene());
 
         return webClient.post()
                 .uri(url)
@@ -42,7 +42,7 @@ public class PythonAIClient {
                 .bodyToFlux(String.class)
                 .doOnNext(chunk -> log.debug("Python SSE chunk: {}", chunk.substring(0, Math.min(100, chunk.length()))))
                 .doOnError(error -> log.error("Python AI 流式调用失败: {}", error.getMessage(), error))
-                .doOnComplete(() -> log.info("Python AI 流式调用完成: module={}, scene={}", request.getModuleName(), request.getSceneType()));
+                .doOnComplete(() -> log.info("Python AI 流式调用完成: module={}, scene={}", request.getModule(), request.getScene()));
     }
 
     /**
@@ -53,7 +53,7 @@ public class PythonAIClient {
      */
     public reactor.core.publisher.Mono<String> call(AICallRequest request) {
         String url = pythonProps.getBaseUrl() + pythonProps.getGeneratePath();
-        log.info("PythonAIClient 非流式调用: url={}, module={}, scene={}", url, request.getModuleName(), request.getSceneType());
+        log.info("PythonAIClient 非流式调用: url={}, module={}, scene={}", url, request.getModule(), request.getScene());
 
         return webClient.post()
                 .uri(url)
@@ -61,7 +61,7 @@ public class PythonAIClient {
                 .bodyValue(request)
                 .retrieve()
                 .bodyToMono(String.class)
-                .doOnSuccess(result -> log.info("Python AI 非流式调用完成: module={}", request.getModuleName()))
+                .doOnSuccess(result -> log.info("Python AI 非流式调用完成: module={}", request.getModule()))
                 .doOnError(error -> log.error("Python AI 非流式调用失败: {}", error.getMessage(), error));
     }
 }
