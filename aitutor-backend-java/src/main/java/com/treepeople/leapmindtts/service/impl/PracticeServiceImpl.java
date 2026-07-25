@@ -378,6 +378,54 @@ public class PracticeServiceImpl implements PracticeService {
     }
 
     @Override
+    public Map<String, Object> setMistakeFocus(Long userId, Long mistakeId, Boolean focused) {
+        PracticeMistake mistake = getUserMistake(userId, mistakeId);
+        boolean nextFocused = focused == null ? !Boolean.TRUE.equals(mistake.getDoubtful()) : Boolean.TRUE.equals(focused);
+        PracticeMistake update = new PracticeMistake();
+        update.setDoubtful(nextFocused);
+        update.setLastReviewAt(LocalDateTime.now());
+        mistakeMapper.update(update, new UpdateWrapper<PracticeMistake>().eq("id", mistakeId).eq("user_id", userId));
+        return toMistakeMap(getUserMistake(userId, mistakeId));
+    }
+
+    @Override
+    public void deleteMistake(Long userId, Long mistakeId) {
+        int deleted = mistakeMapper.delete(new QueryWrapper<PracticeMistake>()
+                .eq("id", mistakeId)
+                .eq("user_id", userId));
+        if (deleted == 0) {
+            throw new IllegalArgumentException("错题不存在");
+        }
+    }
+
+    @Override
+    public Map<String, Object> createMistakeRedoSession(Long userId, List<Long> mistakeIds) {
+        QueryWrapper<PracticeMistake> wrapper = new QueryWrapper<PracticeMistake>()
+                .eq("user_id", userId)
+                .ne("status", STATUS_RESOLVED)
+                .orderByDesc("updated_at");
+        if (mistakeIds != null && !mistakeIds.isEmpty()) {
+            wrapper.in("id", mistakeIds);
+        }
+        List<PracticeMistake> mistakes = mistakeMapper.selectList(wrapper);
+        List<Map<String, Object>> questions = mistakes.stream()
+                .map(PracticeMistake::getQuestionId)
+                .distinct()
+                .map(questionMapper::selectById)
+                .filter(Objects::nonNull)
+                .map(question -> toQuestionMap(question, false))
+                .collect(Collectors.toList());
+
+        Map<String, Object> session = new HashMap<>();
+        session.put("sessionId", "mistake_redo_" + System.currentTimeMillis());
+        session.put("mode", MODE_MISTAKE_REDO);
+        session.put("totalCount", questions.size());
+        session.put("questions", questions);
+        session.put("mistakeIds", mistakes.stream().map(PracticeMistake::getId).collect(Collectors.toList()));
+        return session;
+    }
+
+    @Override
     public void updateMistakeStatus(Long userId, Long mistakeId, PracticeController.UpdateMistakeRequest request) {
         PracticeMistake mistake = mistakeMapper.selectOne(new QueryWrapper<PracticeMistake>()
                 .eq("id", mistakeId)
@@ -400,6 +448,16 @@ public class PracticeServiceImpl implements PracticeService {
         update.setDoubtful(request.getDoubtful());
         update.setReviewNote(request.getReviewNote());
         mistakeMapper.update(update, new UpdateWrapper<PracticeMistake>().eq("id", mistakeId).eq("user_id", userId));
+    }
+
+    private PracticeMistake getUserMistake(Long userId, Long mistakeId) {
+        PracticeMistake mistake = mistakeMapper.selectOne(new QueryWrapper<PracticeMistake>()
+                .eq("id", mistakeId)
+                .eq("user_id", userId));
+        if (mistake == null) {
+            throw new IllegalArgumentException("错题不存在");
+        }
+        return mistake;
     }
 
     @Override
