@@ -88,4 +88,16 @@ public class SpringDocConfig {
                 .pathsToMatch("/api/admin/**", "/admin/**", "/api/admin/review/**")
                 .build();
     }
+
+    /**
+     * 薄弱点分析接口 — 薄弱点查询、AI分析和练习推荐
+     */
+    @Bean
+    public GroupedOpenApi weakPointsApi() {
+        return GroupedOpenApi.builder()
+                .group("5-薄弱点分析")
+                .displayName("薄弱点分析接口")
+                .pathsToMatch("/api/weak-points/**", "/api/exercises/**")
+                .build();
+    }
 }
