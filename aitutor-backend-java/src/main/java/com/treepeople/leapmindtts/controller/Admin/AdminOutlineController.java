@@ -1,4 +1,4 @@
-package com.treepeople.leapmindtts.controller.Admin;
+package com.treepeople.leapmindtts.controller.admin;
 
 import com.treepeople.leapmindtts.annotation.AdminRequired;
 import com.treepeople.leapmindtts.pojo.dto.ProjectOutlineCreateRequest;
