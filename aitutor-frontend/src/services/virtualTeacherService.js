@@ -1,4 +1,4 @@
-import { ApiError, get, put } from './api';
+import { ApiError, get, post, put } from './api';
 import { getToken } from '@/utils/tokenManager.js';
 import {
   normalizeAnimationPayload,
@@ -48,6 +48,7 @@ function normalizeAvatar(avatar, index) {
     description: avatar.description ?? avatar.introduction ?? 'LeapMind 虚拟教师',
     modelUrl: avatar.modelUrl ?? avatar.vrmUrl ?? avatar.avatarUrl,
     voiceType: avatar.voiceType ?? avatar.voice ?? 'default',
+    speed: Number(avatar.speed ?? 1),
     accent: avatar.accent ?? '普通话',
     color: avatar.color ?? DEFAULT_TEACHER_AVATARS[index % DEFAULT_TEACHER_AVATARS.length].color,
   };
@@ -97,6 +98,7 @@ export async function saveTeacherPreference(avatar) {
     await put('/api/virtual-teacher/preference', {
       avatarId: preference.id,
       voiceType: preference.voiceType,
+      speed: preference.speed,
     });
     return { preference, synced: true };
   } catch (error) {
@@ -110,6 +112,13 @@ function getApiBase() {
   return value.endsWith('/') ? value.slice(0, -1) : value;
 }
 
+function resolveApiUrl(value) {
+  if (!value || /^(?:https?:|blob:|data:)/i.test(value)) return value;
+  const base = getApiBase();
+  const path = value.startsWith('/') ? value : `/${value}`;
+  return `${base}${path}`;
+}
+
 async function readAudioResponse(response) {
   const contentType = response.headers.get('content-type') || '';
   if (contentType.includes('application/json')) {
@@ -117,7 +126,7 @@ async function readAudioResponse(response) {
     const data = unwrap(body);
     const audioUrl = data?.audioUrl ?? data?.url;
     if (!audioUrl) return null;
-    const audioResponse = await fetch(audioUrl);
+    const audioResponse = await fetch(resolveApiUrl(audioUrl));
     if (!audioResponse.ok) return null;
     return {
       audioBlob: await audioResponse.blob(),
@@ -129,6 +138,70 @@ async function readAudioResponse(response) {
     audioBlob: await response.blob(),
     animation: null,
     durationMs: Number(response.headers.get('x-audio-duration-ms')) || undefined,
+  };
+}
+
+export async function askVirtualTeacherQuestion({ courseId, question }) {
+  const normalizedQuestion = String(question || '').trim();
+  if (!normalizedQuestion) {
+    throw new ApiError('请输入问题', 400);
+  }
+
+  const response = await post('/api/voice-chat/ask', {
+    courseId: String(courseId || 'virtual-teacher'),
+    question: normalizedQuestion,
+  });
+  const data = unwrap(response);
+  if (!data?.answer || String(data.status || 'SUCCESS').toUpperCase() !== 'SUCCESS') {
+    throw new ApiError(data?.answer || 'AI 教师暂时无法回答', 502, data);
+  }
+  return data;
+}
+
+function htmlToText(value) {
+  const html = String(value || '').trim();
+  if (!html) return '';
+  if (typeof DOMParser === 'undefined') {
+    return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  const documentNode = new DOMParser().parseFromString(html, 'text/html');
+  return (documentNode.body?.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeCourseSlide(slide, index) {
+  const text = htmlToText(slide?.htmlContent ?? slide?.content);
+  const title = slide?.title || `第 ${index + 1} 页`;
+  return {
+    id: String(slide?.slideId ?? slide?.id ?? `slide-${index + 1}`),
+    index: Number(slide?.slideIndex ?? index),
+    title,
+    subtitle: slide?.contentType || '课程课件',
+    points: text ? [text] : ['本页暂无文字内容'],
+    script: text || `现在讲解${title}。`,
+    htmlContent: slide?.htmlContent || '',
+  };
+}
+
+export async function fetchVirtualTeacherLesson(courseId) {
+  const normalizedCourseId = String(courseId || '').trim();
+  if (!normalizedCourseId) return null;
+
+  const response = await get(`/api/courses/${encodeURIComponent(normalizedCourseId)}/slides-data`);
+  const data = unwrap(response);
+  const items = Array.isArray(data) ? data : data?.items ?? data?.records ?? [];
+  const slides = items
+    .map(normalizeCourseSlide)
+    .sort((left, right) => left.index - right.index);
+  if (!slides.length) return null;
+
+  return {
+    id: normalizedCourseId,
+    title: slides[0]?.title || '课程讲解',
+    tag: '正式课件',
+    content: slides[0]?.script || '',
+    prompt: `关于“${slides[0]?.title || '本节内容'}”，你最想进一步理解什么？`,
+    slides,
+    source: 'api',
   };
 }
 

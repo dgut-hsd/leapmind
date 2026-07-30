@@ -4,11 +4,6 @@ import ChatDialog from '../chat/ChatDialog';
 import CharacterViewer from './character/CharacterViewer.jsx';
 import { initPptInteractivePlayer } from '@/features/chat/ppt-interactive-player.js';
 import { askQuestion, synthesizeSpeech } from '@/features/chat/pptApi.js';
-import {
-    normalizeTeacherExpression,
-    synthesizeVirtualTeacherSpeech,
-} from '@/services/virtualTeacherService.js';
-import { normalizeAnimationPayload } from '@/features/virtualTeacher/animationCue.js';
 import { handleVoiceInterruption } from '@/features/chat/pptVoiceControl.js';
 import { state } from '@/features/chat/pptState.js';
 import { sharedViewer } from '@/features/vrmViewer/viewerContext.js';
@@ -25,23 +20,15 @@ const TeacherPanel = ({ dark = false }) => {
         try {
             // 若正在播放讲课，则走统一的打断问答流程（内部含暂停与恢复）
             if (state.isPlaying && !state.isInterrupted) {
-                await handleVoiceInterruption(text);
-                // handleVoiceInterruption 内部负责显示“正在处理”、请求回答、TTS播报、播报完调用 resumePlayback
-                // 本对话面板仍需保留记录，因此上方已先行插入用户与打字占位
-                // 这里补充 AI 文本消息：与 handleVoiceInterruption 返回的答案保持一致
-                // 由于 handleVoiceInterruption 会设置 UI 文案，这里以再次拉取为准
-                try {
-                    const courseId = state.currentCourseId || '';
-                    const result = await askQuestion(courseId, text);
-                    const answer = result?.answer || '（无回答）';
-                    setMessages(prev => {
-                        const next = [...prev];
-                        const idx = next.findIndex(m => m.isTyping);
-                        if (idx !== -1) next[idx] = { sender: 'ai', text: answer };
-                        else next.push({ sender: 'ai', text: answer });
-                        return next;
-                    });
-                } catch {}
+                const result = await handleVoiceInterruption(text);
+                const answer = result?.answer || '（无回答）';
+                setMessages(prev => {
+                    const next = [...prev];
+                    const idx = next.findIndex(m => m.isTyping);
+                    if (idx !== -1) next[idx] = { sender: 'ai', text: answer };
+                    else next.push({ sender: 'ai', text: answer });
+                    return next;
+                });
                 return;
             }
 
@@ -58,26 +45,12 @@ const TeacherPanel = ({ dark = false }) => {
             });
             // TTS -> 驱动3D角色说话与头部动作
             try {
-                let tts = null;
-                let ttsAnimation = null;
-                try {
-                    const ttsResult = await synthesizeVirtualTeacherSpeech({ courseId, text: answer });
-                    tts = ttsResult?.audioBlob;
-                    ttsAnimation = ttsResult?.animation;
-                } catch {
-                    // M8 后端未部署时兼容现有语音接口
-                    tts = await synthesizeSpeech(courseId, answer);
-                }
+                const tts = await synthesizeSpeech(courseId, answer);
                 if (tts) {
                     const arrayBuf = await tts.arrayBuffer();
-                    const animation = ttsAnimation ?? normalizeAnimationPayload(result);
                     const screenplay = {
-                      expression: normalizeTeacherExpression(
-                          animation?.expression ?? result?.expression ?? result?.emotion
-                      ),
-                      talk: { message: answer },
-                      gestures: animation?.gestures ?? [],
-                      phonemes: animation?.phonemes ?? [],
+                      expression: 'neutral',
+                      talk: { message: answer }
                     };
                     sharedViewer?.model?.speak(arrayBuf, screenplay);
                 }

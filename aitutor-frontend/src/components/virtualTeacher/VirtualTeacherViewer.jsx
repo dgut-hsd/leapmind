@@ -6,12 +6,15 @@ export default function VirtualTeacherViewer({
   modelUrl,
   viewer: externalViewer,
   className = '',
+  teachingSlide,
   onReady,
   onError,
 }) {
   const canvasRef = useRef(null);
   const viewerRef = useRef(externalViewer || new Viewer());
+  const teachingSlideRef = useRef(teachingSlide);
   const [status, setStatus] = useState('loading');
+  teachingSlideRef.current = teachingSlide;
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -27,6 +30,7 @@ export default function VirtualTeacherViewer({
         .loadVrm(buildUrl(modelUrl))
         .then(() => {
           if (!active) return;
+          if (teachingSlideRef.current) viewer.setTeachingSlide(teachingSlideRef.current);
           setStatus('ready');
           onReady?.(viewer);
         })
@@ -45,6 +49,11 @@ export default function VirtualTeacherViewer({
       viewer.dispose();
     };
   }, [modelUrl, onError, onReady]);
+
+  useEffect(() => {
+    if (status !== 'ready') return;
+    viewerRef.current.setTeachingSlide(teachingSlide);
+  }, [status, teachingSlide]);
 
   return (
     <div className={`relative h-full w-full overflow-hidden ${className}`}>

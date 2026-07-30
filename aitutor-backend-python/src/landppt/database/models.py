@@ -209,22 +209,3 @@ class GlobalMasterTemplate(Base):
     created_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # 创建者
     created_at: Mapped[float] = mapped_column(Float, default=time.time)
     updated_at: Mapped[float] = mapped_column(Float, default=time.time, onupdate=time.time)
-
-
-class TeachingContent(Base):
-    """教学内容表（M4讲课、M5备课共用）。
-    存储AI生成的备课内容，包含教学大纲、PPT结构和讲解词。
-    """
-    __tablename__ = "teaching_contents"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    type: Mapped[str] = mapped_column(String(30), nullable=False, default="lesson_plan")
-    title: Mapped[str] = mapped_column(String(500), default="")
-    source_type: Mapped[str] = mapped_column(String(30), default="from_text")
-    source_content_json: Mapped[str] = mapped_column(Text, default="")
-    generated_content_json: Mapped[str] = mapped_column(Text, default="")
-    ppt_structure_json: Mapped[str] = mapped_column(Text, default="")
-    status: Mapped[str] = mapped_column(String(20), default="published")
-    created_at: Mapped[float] = mapped_column(Float, default=time.time)
-    updated_at: Mapped[float] = mapped_column(Float, default=time.time)

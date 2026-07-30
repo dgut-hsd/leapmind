@@ -20,6 +20,9 @@ export class Viewer {
   _animationFrameId;
   _resizeHandler;
   _loadRequestId;
+  _teachingScreen;
+  _teachingScreenTexture;
+  _teachingMode = false;
 
   constructor() {
     this.isReady = false;
@@ -85,7 +88,12 @@ export class Viewer {
       }
 
       requestAnimationFrame(() => {
-        if (requestId === this._loadRequestId) this.fitToModel(0.9, 0.16);
+        if (requestId !== this._loadRequestId) return;
+        if (this._teachingMode) {
+          this.fitToTeachingScene();
+        } else {
+          this.fitToModel(0.9, 0.16);
+        }
       });
       return model;
     } catch (error) {
@@ -218,6 +226,194 @@ export class Viewer {
     this._cameraControls.update();
   }
 
+  /**
+   * 将 PPT 作为 CanvasTexture 放入 Three.js 场景。
+   * 课件与 VRM 共用相机、灯光和渲染循环，不是页面上的 DOM 浮层。
+   */
+  setTeachingSlide(slide) {
+    if (!slide) {
+      this.clearTeachingScreen();
+      return;
+    }
+
+    this._teachingMode = true;
+    if (!this._teachingScreen) {
+      const group = new THREE.Group();
+      group.name = "TeachingScreen3D";
+
+      const back = new THREE.Mesh(
+        new THREE.BoxGeometry(1.56, 0.96, 0.055),
+        new THREE.MeshStandardMaterial({
+          color: 0x172554,
+          roughness: 0.42,
+          metalness: 0.28,
+        })
+      );
+      group.add(back);
+
+      const screen = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.42, 0.8),
+        new THREE.MeshBasicMaterial({ color: 0xffffff })
+      );
+      screen.name = "TeachingSlideSurface";
+      screen.position.z = 0.031;
+      group.add(screen);
+
+      const tray = new THREE.Mesh(
+        new THREE.BoxGeometry(1.62, 0.045, 0.12),
+        new THREE.MeshStandardMaterial({
+          color: 0x334155,
+          roughness: 0.34,
+          metalness: 0.48,
+        })
+      );
+      tray.position.set(0, -0.515, 0.025);
+      group.add(tray);
+
+      group.position.set(0.72, 1.18, -0.12);
+      group.rotation.y = -0.055;
+      this._scene.add(group);
+      this._teachingScreen = group;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 1280;
+    canvas.height = 720;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+
+    const gradient = context.createLinearGradient(0, 0, 1280, 720);
+    gradient.addColorStop(0, "#f8fafc");
+    gradient.addColorStop(0.62, "#eef2ff");
+    gradient.addColorStop(1, "#dbeafe");
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 1280, 720);
+
+    context.fillStyle = "#4338ca";
+    context.fillRect(0, 0, 1280, 18);
+    context.fillStyle = "#06b6d4";
+    context.fillRect(0, 18, 350, 7);
+
+    context.fillStyle = "#4f46e5";
+    context.font = '700 30px "Microsoft YaHei", sans-serif';
+    context.fillText(slide.tag || "LEAPMIND 课堂", 70, 88);
+
+    context.fillStyle = "#0f172a";
+    context.font = '900 64px "Microsoft YaHei", sans-serif';
+    this._drawWrappedText(context, slide.title || "课堂课件", 70, 178, 1120, 78, 2);
+
+    context.fillStyle = "#64748b";
+    context.font = '500 31px "Microsoft YaHei", sans-serif';
+    this._drawWrappedText(context, slide.subtitle || "", 72, 292, 1080, 44, 2);
+
+    const points = Array.isArray(slide.points) ? slide.points.slice(0, 3) : [];
+    points.forEach((point, index) => {
+      const y = 388 + index * 88;
+      context.fillStyle = index === 0 ? "#4f46e5" : "#0891b2";
+      context.beginPath();
+      context.arc(94, y - 8, 27, 0, Math.PI * 2);
+      context.fill();
+      context.fillStyle = "#ffffff";
+      context.font = '800 26px "Microsoft YaHei", sans-serif';
+      context.textAlign = "center";
+      context.fillText(String(index + 1), 94, y + 1);
+      context.textAlign = "left";
+      context.fillStyle = "#1e293b";
+      context.font = '650 32px "Microsoft YaHei", sans-serif';
+      this._drawWrappedText(context, String(point), 145, y, 980, 40, 1);
+    });
+
+    context.fillStyle = "#64748b";
+    context.font = '600 24px "Microsoft YaHei", sans-serif';
+    context.textAlign = "right";
+    context.fillText(
+      `${slide.page || 1} / ${slide.totalPages || 1}`,
+      1200,
+      670
+    );
+    context.textAlign = "left";
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = Math.min(8, this._renderer?.capabilities?.getMaxAnisotropy?.() || 1);
+    texture.needsUpdate = true;
+
+    const screen = this._teachingScreen.getObjectByName("TeachingSlideSurface");
+    if (screen?.material) {
+      this._teachingScreenTexture?.dispose();
+      screen.material.map = texture;
+      screen.material.needsUpdate = true;
+      this._teachingScreenTexture = texture;
+    }
+
+    requestAnimationFrame(() => this.fitToTeachingScene());
+  }
+
+  _drawWrappedText(context, text, x, y, maxWidth, lineHeight, maxLines) {
+    const characters = Array.from(text || "");
+    let line = "";
+    let lineIndex = 0;
+
+    for (let index = 0; index < characters.length; index += 1) {
+      const testLine = line + characters[index];
+      if (context.measureText(testLine).width > maxWidth && line) {
+        context.fillText(line, x, y + lineIndex * lineHeight);
+        line = characters[index];
+        lineIndex += 1;
+        if (lineIndex >= maxLines) return;
+      } else {
+        line = testLine;
+      }
+    }
+    if (line && lineIndex < maxLines) {
+      context.fillText(line, x, y + lineIndex * lineHeight);
+    }
+  }
+
+  fitToTeachingScene() {
+    if (!this.model?.vrm || !this._teachingScreen || !this._camera || !this._cameraControls) return;
+
+    this.model.vrm.scene.position.x = -0.47;
+    this.model.vrm.scene.updateMatrixWorld(true);
+    this._teachingScreen.updateMatrixWorld(true);
+
+    const box = new THREE.Box3()
+      .setFromObject(this.model.vrm.scene)
+      .union(new THREE.Box3().setFromObject(this._teachingScreen));
+    if (box.isEmpty()) return;
+
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const fovRad = THREE.MathUtils.degToRad(this._camera.fov);
+    const distanceForHeight = (size.y * 0.58) / Math.tan(fovRad / 2);
+    const distanceForWidth = (size.x * 0.58) / (Math.tan(fovRad / 2) * this._camera.aspect);
+    const distance = Math.max(distanceForHeight, distanceForWidth);
+    const target = new THREE.Vector3(center.x, center.y + size.y * 0.06, center.z);
+
+    this._camera.position.set(target.x, target.y + size.y * 0.04, center.z + distance);
+    this._cameraControls.target.copy(target);
+    this._cameraControls.update();
+  }
+
+  clearTeachingScreen() {
+    this._teachingMode = false;
+    if (this.model?.vrm) this.model.vrm.scene.position.x = 0;
+    if (!this._teachingScreen) return;
+
+    this._scene.remove(this._teachingScreen);
+    this._teachingScreen.traverse((object) => {
+      object.geometry?.dispose?.();
+      if (Array.isArray(object.material)) {
+        object.material.forEach((material) => material.dispose());
+      } else {
+        object.material?.dispose?.();
+      }
+    });
+    this._teachingScreenTexture?.dispose();
+    this._teachingScreenTexture = undefined;
+    this._teachingScreen = undefined;
+  }
+
   update = () => {
     if (!this.isReady) return;
     this._animationFrameId = requestAnimationFrame(this.update);
@@ -245,6 +441,7 @@ export class Viewer {
       this._resizeHandler = null;
     }
 
+    this.clearTeachingScreen();
     this.unloadVRM();
     this.model = undefined;
     this._cameraControls?.dispose();

@@ -12,7 +12,15 @@ import java.time.Duration;
 public class VirtualTeacherProperties {
     private Duration cacheTtl = Duration.ofHours(24);
     private Duration synthesisTimeout = Duration.ofSeconds(125);
+    private RateLimit rateLimit = new RateLimit();
     private Storage storage = new Storage();
+
+    @Data
+    public static class RateLimit {
+        private boolean enabled = true;
+        private int requestsPerMinute = 20;
+        private int dailyCharacters = 20000;
+    }
 
     @Data
     public static class Storage {

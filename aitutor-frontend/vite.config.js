@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv } from 'vite'
 import { fileURLToPath, URL } from 'node:url'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -8,7 +9,7 @@ export default defineConfig(({ mode }) => {
   const javaApi = env.JAVA_API_TARGET  || 'http://localhost:8080'
 
   return {
-    plugins: [react()],
+    plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -59,6 +60,42 @@ export default defineConfig(({ mode }) => {
         },
         // M8 虚拟教师形象、偏好与 TTS（Java 后端）
         '/api/virtual-teacher': {
+          target: javaApi,
+          changeOrigin: true,
+          secure: false,
+        },
+        // 对话服务（M7 ChatPanel — Java 后端）
+        '/api/conversation': {
+          target: javaApi,
+          changeOrigin: true,
+          secure: false,
+        },
+        // M2 - OCR 识别
+        '/api/ocr': {
+          target: javaApi,
+          changeOrigin: true,
+          secure: false,
+        },
+        // M2 - 讲题
+        '/api/explain': {
+          target: javaApi,
+          changeOrigin: true,
+          secure: false,
+        },
+        // M1 - 做题练习
+        '/api/practice': {
+          target: javaApi,
+          changeOrigin: true,
+          secure: false,
+        },
+        // M1 - 错题本
+        '/api/wrong-questions': {
+          target: javaApi,
+          changeOrigin: true,
+          secure: false,
+        },
+        // M6 用户画像、知识掌握度与复习提醒（Java 后端）
+        '/api/user-profile': {
           target: javaApi,
           changeOrigin: true,
           secure: false,

@@ -1,14 +1,18 @@
 package com.treepeople.leapmindtts.service.virtualteacher;
 
 import com.treepeople.leapmindtts.config.VirtualTeacherProperties;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import com.treepeople.leapmindtts.pojo.dto.VirtualTeacherTtsRequest;
 import com.treepeople.leapmindtts.pojo.vo.VirtualTeacherTtsVO;
 import com.treepeople.leapmindtts.service.lesson.TextToSpeechService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.util.HexFormat;
 import java.util.Optional;
 
@@ -20,8 +24,35 @@ public class VirtualTeacherTtsService {
     private final VirtualTeacherTtsCache cache;
     private final AudioStorageService storage;
     private final VirtualTeacherProperties properties;
+    private final VirtualTeacherUsageLimiter usageLimiter;
+    private final VirtualTeacherAuditService auditService;
+    private final ObjectProvider<MeterRegistry> meterRegistryProvider;
 
     public SynthesisResult synthesize(VirtualTeacherTtsRequest request) {
+        return synthesize(null, request);
+    }
+
+    public SynthesisResult synthesize(Long userId, VirtualTeacherTtsRequest request) {
+        long startedAt = System.nanoTime();
+        int textLength = request.getText() == null ? 0 : request.getText().trim().length();
+        try {
+            if (userId != null) {
+                usageLimiter.check(userId, textLength);
+            }
+            SynthesisResult result = synthesizeInternal(request);
+            long latencyMs = Duration.ofNanos(System.nanoTime() - startedAt).toMillis();
+            auditService.recordTts(userId, request, result, latencyMs);
+            recordMetrics(result, latencyMs, "success");
+            return result;
+        } catch (RuntimeException error) {
+            long latencyMs = Duration.ofNanos(System.nanoTime() - startedAt).toMillis();
+            auditService.recordTtsFailure(userId, request, error, latencyMs);
+            recordFailureMetric(error);
+            throw error;
+        }
+    }
+
+    private SynthesisResult synthesizeInternal(VirtualTeacherTtsRequest request) {
         String voice = request.getVoiceType() == null || request.getVoiceType().isBlank()
                 ? "default"
                 : request.getVoiceType().trim();
@@ -48,6 +79,30 @@ public class VirtualTeacherTtsService {
         storage.store(objectKey, audio, AUDIO_CONTENT_TYPE);
         cache.put(cacheKey, objectKey);
         return buildResult(audio, objectKey, cacheKey, false);
+    }
+
+    private void recordMetrics(SynthesisResult result, long latencyMs, String status) {
+        MeterRegistry meterRegistry = meterRegistryProvider.getIfAvailable();
+        if (meterRegistry == null) return;
+        meterRegistry.counter(
+                "virtual_teacher_tts_requests_total",
+                "status", status,
+                "cache", result.response().isCacheHit() ? "hit" : "miss").increment();
+        meterRegistry.summary("virtual_teacher_tts_audio_bytes")
+                .record(result.response().getAudioSize());
+        Timer.builder("virtual_teacher_tts_latency")
+                .tag("status", status)
+                .register(meterRegistry)
+                .record(Duration.ofMillis(latencyMs));
+    }
+
+    private void recordFailureMetric(RuntimeException error) {
+        MeterRegistry meterRegistry = meterRegistryProvider.getIfAvailable();
+        if (meterRegistry == null) return;
+        meterRegistry.counter(
+                "virtual_teacher_tts_requests_total",
+                "status", "failed",
+                "error", error.getClass().getSimpleName()).increment();
     }
 
     public Optional<byte[]> loadAudio(String objectKey) {

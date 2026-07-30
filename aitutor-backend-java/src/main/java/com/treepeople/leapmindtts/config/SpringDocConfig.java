@@ -78,18 +78,6 @@ public class SpringDocConfig {
     }
 
     /**
-     * 备课接口 — PPT模板、备课内容管理
-     */
-    @Bean
-    public GroupedOpenApi lessonPrepApi() {
-        return GroupedOpenApi.builder()
-                .group("5-备课接口")
-                .displayName("备课接口")
-                .pathsToMatch("/api/lesson-prep/**")
-                .build();
-    }
-
-    /**
      * 管理后台接口 — 管理员功能
      */
     @Bean
@@ -99,5 +87,11 @@ public class SpringDocConfig {
                 .displayName("管理后台接口")
                 .pathsToMatch("/api/admin/**", "/admin/**", "/api/admin/review/**")
                 .build();
+    }
+
+    @Bean
+    public GroupedOpenApi m6ProfileApi() {
+        return GroupedOpenApi.builder().group("m6-user-profile").displayName("M6 用户画像")
+                .pathsToMatch("/api/user-profile/**").build();
     }
 }

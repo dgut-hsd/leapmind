@@ -3,15 +3,19 @@ package com.treepeople.leapmindtts.service.virtualteacher;
 import com.treepeople.leapmindtts.config.VirtualTeacherProperties;
 import com.treepeople.leapmindtts.pojo.dto.VirtualTeacherTtsRequest;
 import com.treepeople.leapmindtts.service.lesson.TextToSpeechService;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.springframework.beans.factory.ObjectProvider;
 import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Mono;
 
 import java.util.Optional;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -29,6 +33,12 @@ class VirtualTeacherTtsServiceTest {
     private VirtualTeacherTtsCache cache;
     @Mock
     private AudioStorageService storage;
+    @Mock
+    private VirtualTeacherUsageLimiter usageLimiter;
+    @Mock
+    private VirtualTeacherAuditService auditService;
+    @Mock
+    private ObjectProvider<MeterRegistry> meterRegistryProvider;
 
     private VirtualTeacherTtsService service;
     private VirtualTeacherProperties properties;
@@ -37,7 +47,14 @@ class VirtualTeacherTtsServiceTest {
     @BeforeEach
     void setUp() {
         properties = new VirtualTeacherProperties();
-        service = new VirtualTeacherTtsService(textToSpeechService, cache, storage, properties);
+        service = new VirtualTeacherTtsService(
+                textToSpeechService,
+                cache,
+                storage,
+                properties,
+                usageLimiter,
+                auditService,
+                meterRegistryProvider);
         request = new VirtualTeacherTtsRequest();
         request.setText("同学们好");
         request.setVoiceType("zhixiaoxia");
@@ -72,5 +89,20 @@ class VirtualTeacherTtsServiceTest {
         assertArrayEquals(audio, result.audio());
         verify(storage).store(anyString(), eq(audio), eq("audio/wav"));
         verify(cache).put(anyString(), anyString());
+    }
+
+    @Test
+    void checksQuotaAndWritesAuditWhenUserIdProvided() {
+        byte[] audio = {7, 8, 9};
+        when(cache.get(anyString())).thenReturn(Optional.empty());
+        when(textToSpeechService.synthesizeSpeech("同学们好", "zhixiaoxia", 1.0))
+                .thenReturn(Mono.just(audio));
+        when(storage.createReadUrl(anyString())).thenReturn("/audio/new.wav");
+
+        VirtualTeacherTtsService.SynthesisResult result = service.synthesize(42L, request);
+
+        assertFalse(result.response().isCacheHit());
+        verify(usageLimiter).check(42L, 4);
+        verify(auditService).recordTts(eq(42L), eq(request), any(), anyLong());
     }
 }

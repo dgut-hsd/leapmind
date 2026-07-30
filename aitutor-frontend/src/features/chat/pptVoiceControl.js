@@ -101,9 +101,10 @@ export async function handleVoiceInterruption(question) {
   stopVoiceDetection();
   showAIResponse('正在处理您的问题...', true);
   try {
-    const result = await askQuestion(state.currentSessionId, question);
+    const courseId = state.currentCourseId || state.currentSessionId || '';
+    const result = await askQuestion(courseId, question);
     showAIResponse(result.answer, false);
-    const ttsBlob = await synthesizeSpeech(state.currentSessionId, result.answer);
+    const ttsBlob = await synthesizeSpeech(courseId, result.answer);
     if (ttsBlob) {
       const audioUrl = URL.createObjectURL(ttsBlob);
       const responseAudio = document.getElementById('responseAudio');
@@ -113,9 +114,11 @@ export async function handleVoiceInterruption(question) {
     } else {
       setTimeout(() => resumePlayback(), 3000);
     }
+    return result;
   } catch (error) {
     showError('处理问题失败: ' + error.message);
     setTimeout(() => resumePlayback(), 2000);
+    throw error;
   }
 }
 
