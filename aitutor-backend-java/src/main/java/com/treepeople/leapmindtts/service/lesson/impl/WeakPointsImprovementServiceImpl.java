@@ -22,7 +22,7 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * 薄弱点改善追踪服务实现（M3 · 谢宛君）
+ * 薄弱点改善追踪服务实现（M3 薄弱点模块）
  * <p>
  * 计算逻辑：
  * <ol>

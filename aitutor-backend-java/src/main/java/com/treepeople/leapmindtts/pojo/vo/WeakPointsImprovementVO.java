@@ -8,7 +8,7 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 
 /**
- * 薄弱点改善报告 VO（M3 · 谢宛君）
+ * 薄弱点改善报告 VO（M3 薄弱点模块）
  * <p>
  * 对比本期与上期练习正确率，输出进步/退步知识点及整体改善度。
  */

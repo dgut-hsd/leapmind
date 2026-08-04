@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 薄弱点改善追踪控制器（M3 · 谢宛君）
+ * 薄弱点改善追踪控制器（M3 薄弱点模块）
  * <p>
  * 提供薄弱点改善报告查询接口：
  * <pre>

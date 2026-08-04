@@ -3,7 +3,7 @@ package com.treepeople.leapmindtts.service.lesson;
 import com.treepeople.leapmindtts.pojo.vo.WeakPointsImprovementVO;
 
 /**
- * 薄弱点改善追踪服务接口（M3 · 谢宛君）
+ * 薄弱点改善追踪服务接口（M3 薄弱点模块）
  */
 public interface WeakPointsImprovementService {
 

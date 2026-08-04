@@ -15,7 +15,7 @@ import java.math.RoundingMode;
 import java.util.List;
 
 /**
- * 薄弱点计算定时任务（M3 · 谢宛君）
+ * 薄弱点计算定时任务（M3 薄弱点模块）
  * <p>
  * 每天凌晨 02:30 全量重算薄弱点数据：
  * <ol>
