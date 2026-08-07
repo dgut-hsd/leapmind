@@ -81,6 +81,24 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        // M5 - 备课内容管理 & PPT模板（Java 8080）
+        '/api/lesson-prep': {
+          target: javaApi,
+          changeOrigin: true,
+          secure: false,
+        },
+        // M3 - 薄弱点（Java 8080）
+        '/api/weak-points': {
+          target: javaApi,
+          changeOrigin: true,
+          secure: false,
+        },
+        // M3 - 练习推荐（Java 8080）
+        '/api/exercises': {
+          target: javaApi,
+          changeOrigin: true,
+          secure: false,
+        },
       },
     },
   }

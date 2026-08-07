@@ -10,6 +10,10 @@ import ProfilePage from './pages/ProfilePage.jsx';
 import PhotoQAPage from './pages/m2/PhotoQAPage';
 import ExplainPage from './pages/m2/ExplainPage';
 import ExplainHistoryPage from './pages/m2/ExplainHistoryPage';
+import LessonPrepCreatePage from './pages/m5/LessonPrepCreatePage';
+import LessonPrepEditPage from './pages/m5/LessonPrepEditPage';
+import PptEditorPage from './pages/m5/PptEditorPage';
+import LessonPrepListPage from './pages/m5/LessonPrepListPage';
 import { hasValidToken } from './utils/tokenManager';
 import { checkAuth, logout } from './services/authService';
 
@@ -21,6 +25,8 @@ export default function App() {
     const [showProfile, setShowProfile] = useState(false);
     const [m2Page, setM2Page] = useState(null); // null | 'photo-qa' | 'explain' | 'explain-history'
     const [m2Params, setM2Params] = useState({}); // 传递给 M2 页面的参数
+    const [m5Page, setM5Page] = useState(null); // null | 'create' | 'edit' | 'ppt-editor' | 'list'
+    const [m5Params, setM5Params] = useState({}); // 传递给 M5 页面的参数
 
     useEffect(() => {
         const checkSession = async () => {
@@ -90,6 +96,39 @@ export default function App() {
                 <ExplainHistoryPage onBack={m2Params.from === 'explain' ? () => { setM2Params({}); setM2Page('explain'); } : () => setM2Page(null)} onReplay={(id) => { setM2Params({ replayId: id, from: 'explain-history' }); setM2Page('explain'); }} />
             ) : currentCourseId ? (
                       <LecturePage2 courseId={currentCourseId} onBack={() => setCurrentCourseId('')} />
+            ) : m5Page === 'create' ? (
+                <LessonPrepCreatePage
+                  onBack={() => { const from = m5Params.from; setM5Params({}); setM5Page(from === 'list' ? 'list' : null); }}
+                  onPrepCreated={(prepId) => { setM5Params({ prepId, from: 'create' }); setM5Page('edit'); }}
+                />
+            ) : m5Page === 'edit' ? (
+                <LessonPrepEditPage
+                  prepId={m5Params.prepId}
+                  onBack={() => { const from = m5Params.from; setM5Params({}); setM5Page(from === 'edit' ? 'create' : 'list'); }}
+                  onGeneratedPpt={(result) => { setM5Params({ ...m5Params, pptSlides: result.slides, pptId: result.pptId, from: 'edit' }); setM5Page('ppt-editor'); }}
+                />
+            ) : m5Page === 'ppt-editor' ? (
+                <PptEditorPage
+                  pptId={m5Params.pptId}
+                  initialSlides={m5Params.pptSlides}
+                  onBack={() => { const from = m5Params.from; setM5Params({}); setM5Page(from === 'edit' ? 'edit' : 'list'); }}
+                />
+            ) : m5Page === 'list' ? (
+                <LessonPrepListPage
+                  onBack={() => setM5Page(null)}
+                  onCreate={() => { setM5Params({ from: 'list' }); setM5Page('create'); }}
+                  onEdit={(prepId) => { setM5Params({ prepId, from: 'list' }); setM5Page('edit'); }}
+                  onPreviewPpt={(item) => {
+                    // 从 pptStructure 解析 slides 供 PPT 编辑页使用
+                    let slides = []
+                    try {
+                      const parsed = typeof item.pptStructure === 'string' ? JSON.parse(item.pptStructure) : item.pptStructure
+                      slides = parsed?.slides || parsed?.pages || []
+                    } catch (e) { /* ignore */ }
+                    setM5Params({ pptId: item.prepId, pptSlides: slides, from: 'list' });
+                    setM5Page('ppt-editor');
+                  }}
+                />
             ) : (
                 showProfile ? (
                     <ProfilePage onBack={() => setShowProfile(false)} />
@@ -99,6 +138,8 @@ export default function App() {
                         onOpenProfile={handleOpenProfile}
                         onM2PhotoQa={() => setM2Page('photo-qa')}
                         onM2Explain={() => { setM2Params({}); setM2Page('explain'); }}
+                        onM5Create={() => setM5Page('create')}
+                        onM5List={() => setM5Page('list')}
                     />
                 )
             )}
