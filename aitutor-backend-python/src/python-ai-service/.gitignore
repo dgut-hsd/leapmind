@@ -1,0 +1,21 @@
+# Python缓存、编译文件
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+venv/
+env/
+.venv/
+*.whl
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# pip缓存、临时文件
+pip-wheel-metadata/
+*.tmp
+
+# 端口日志、uvicorn运行缓存
+.uvicorn/
