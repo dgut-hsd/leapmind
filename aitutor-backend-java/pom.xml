@@ -252,6 +252,13 @@
             <version>4.4.0</version>
         </dependency>
 
+        <!-- Hutool 工具包（OCR HTTP请求等） -->
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-http</artifactId>
+            <version>5.8.20</version>
+        </dependency>
+
     </dependencies>
 
 

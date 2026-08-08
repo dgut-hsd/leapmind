@@ -240,3 +240,14 @@ python-service:
   event-process-path: /api/events/process
   connect-timeout: 30
   read-timeout: 300
+
+# OCR配置
+ocr:
+  provider: aliyun # baidu / aliyun
+  aliyun:
+    app-code: ${OCR_APP_CODE:}
+    api-url: https://tysbgpu.market.alicloudapi.com/api/predict/ocr_general
+  baidu:
+    app-id: ${OCR_BAIDU_APP_ID:}
+    api-key: ${OCR_BAIDU_API_KEY:}
+    secret-key: ${OCR_BAIDU_SECRET_KEY:}
