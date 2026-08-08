@@ -5,12 +5,15 @@ import com.treepeople.leapmindtts.exception.TooManyRequestsException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -34,6 +37,26 @@ public class VirtualTeacherUsageLimiter {
 
     /** 包内测试 seam：cleanupExpired 在删除每个过期条目前调用，供并发回归测试注入同步点。 */
     volatile Runnable cleanupBeforeRemoveProbe;
+
+    /**
+     * 原子 INCRBY + 条件 PEXPIRE 脚本（固定单例，便于 Spring Data Redis 基于 SHA1 复用 script cache）。
+     * <p>
+     * 语义：
+     * 1. 对 KEYS[1] 原子增加 ARGV[1]（amount，INCRBY 保持任意 amount 语义）；
+     * 2. 若 current == amount，说明该 key 刚被首次创建/累计，设置 PEXPIRE ARGV[2]（ttl 毫秒）；
+     * 3. 返回 current。
+     * <p>
+     * 该脚本把「增加 + 条件设置 TTL」合并为单个 Redis 原子操作，
+     * 消除原实现中 increment 成功但 expire 未执行导致的 key 永久残留竞态。
+     */
+    private static final RedisScript<Long> INCREMENT_AND_EXPIRE_IF_FIRST =
+            new DefaultRedisScript<>(
+                    "local current = redis.call('INCRBY', KEYS[1], tonumber(ARGV[1]))\n"
+                            + "if current == tonumber(ARGV[1]) then\n"
+                            + "    redis.call('PEXPIRE', KEYS[1], tonumber(ARGV[2]))\n"
+                            + "end\n"
+                            + "return current",
+                    Long.class);
 
     public VirtualTeacherUsageLimiter(
             ObjectProvider<StringRedisTemplate> redisProvider,
@@ -86,11 +109,14 @@ public class VirtualTeacherUsageLimiter {
     private Long incrementRedis(String key, int amount, Duration ttl) {
         if (redis == null) return null;
         try {
-            Long current = redis.opsForValue().increment(key, amount);
-            if (current != null && current == amount) {
-                redis.expire(key, ttl);
-            }
-            return current;
+            // 单次 Lua 脚本原子完成 INCRBY + 条件 PEXPIRE，
+            // 避免 increment 成功后 expire 未执行导致的 key 残留竞态。
+            // amount 经 ARGV 传入，保持任意累加语义（rate=1，daily chars=textLength）。
+            return redis.execute(
+                    INCREMENT_AND_EXPIRE_IF_FIRST,
+                    Collections.singletonList(key),
+                    String.valueOf(amount),
+                    String.valueOf(ttl.toMillis()));
         } catch (RuntimeException error) {
             log.warn("Redis 限流不可用，使用进程内限流: {}", error.getMessage());
             return null;

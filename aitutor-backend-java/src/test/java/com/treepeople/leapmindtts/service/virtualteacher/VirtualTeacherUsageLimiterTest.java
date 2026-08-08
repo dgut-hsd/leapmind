@@ -6,23 +6,33 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.script.RedisScript;
 
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class VirtualTeacherUsageLimiterTest {
@@ -190,12 +200,10 @@ class VirtualTeacherUsageLimiterTest {
     @Test
     void expiredLocalCountersCleanedAfterRedisRecovers() {
         // 构造一个运行时抛异常的 mock Redis，模拟 Redis 宕机后恢复
+        // （Phase 3.2：Redis 交互走脚本 execute，mock seam 随之更新，行为断言不变）
         AtomicBoolean redisDown = new AtomicBoolean(true);
-        @SuppressWarnings("unchecked")
-        ValueOperations<String, String> valueOps = mock(ValueOperations.class);
-        StringRedisTemplate mockRedis = mock(StringRedisTemplate.class);
-        when(mockRedis.opsForValue()).thenReturn(valueOps);
-        when(valueOps.increment(anyString(), anyLong())).thenAnswer(inv -> {
+        StringRedisTemplate mockRedis = redisMock();
+        when(mockRedis.execute(any(RedisScript.class), anyList(), any(), any())).thenAnswer(inv -> {
             if (redisDown.get()) {
                 throw new RuntimeException("Redis 不可用");
             }
@@ -232,5 +240,154 @@ class VirtualTeacherUsageLimiterTest {
         // 65 个过期的 rate bucket 被清理，65 个未过期的 daily bucket 保留，无新本地计数器
         assertEquals(65, limiterWithRedis.localCountersSize(),
                 "Redis 恢复后 check() 必须清理过期本地计数器，且不再创建新的本地计数器");
+    }
+
+    // ============ Phase 3.2: 原子 Redis 脚本（UNIT CONTRACT TEST，非真实 Redis 集成） ============
+
+    @SuppressWarnings("unchecked")
+    private ObjectProvider<StringRedisTemplate> redisProviderReturning(StringRedisTemplate redisTemplate) {
+        ObjectProvider<StringRedisTemplate> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(redisTemplate);
+        return provider;
+    }
+
+    @SuppressWarnings("unchecked")
+    private StringRedisTemplate redisMock() {
+        return mock(StringRedisTemplate.class);
+    }
+
+    /** TEST 1 — Redis Script Path：Redis 可用时，check() 必须经由脚本 execute 完成，且不进入本地 fallback。 */
+    @Test
+    void redisScriptPathUsedWhenRedisAvailable() {
+        StringRedisTemplate redisTemplate = redisMock();
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(), any())).thenReturn(1L);
+        VirtualTeacherUsageLimiter limiterWithRedis =
+                new VirtualTeacherUsageLimiter(redisProviderReturning(redisTemplate), properties, clock);
+
+        limiterWithRedis.check(42L, 5);
+
+        // check() 触发两次脚本执行：rate 与 daily chars
+        verify(redisTemplate, times(2)).execute(any(RedisScript.class), anyList(), any(), any());
+        assertEquals(0, limiterWithRedis.localCountersSize(), "Redis 可用时不得创建本地计数器");
+    }
+
+    /** TEST 2 — amount > 1：daily chars 必须以 textLength 作为 INCRBY amount，而非固定 1。 */
+    @Test
+    void scriptReceivesTextLengthAsAmountForDailyChars() {
+        List<Object[]> calls = new ArrayList<>();
+        StringRedisTemplate redisTemplate = redisMock();
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(), any())).thenAnswer(inv -> {
+            calls.add(inv.getArguments());
+            return 1L;
+        });
+        VirtualTeacherUsageLimiter limiterWithRedis =
+                new VirtualTeacherUsageLimiter(redisProviderReturning(redisTemplate), properties, clock);
+
+        limiterWithRedis.check(42L, 123);
+
+        // 两次 execute：rate（amount=1）与 daily chars（amount=123）
+        assertEquals(2, calls.size());
+        Object[] rateArgs = calls.get(0);
+        Object[] charsArgs = calls.get(1);
+        assertEquals("1", rateArgs[2], "rate 递增 amount 必须为 1");
+        assertEquals("123", charsArgs[2], "daily chars 递增 amount 必须为 textLength=123，而非固定 1");
+    }
+
+    /** TEST 3 — TTL 参数：rate 传 Duration.ofMinutes(2)，daily chars 传 Duration.ofDays(2)，且以毫秒精度传递。 */
+    @Test
+    void scriptReceivesTtlInMillisecondsForRateAndDailyChars() {
+        List<Object[]> calls = new ArrayList<>();
+        StringRedisTemplate redisTemplate = redisMock();
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(), any())).thenAnswer(inv -> {
+            calls.add(inv.getArguments());
+            return 1L;
+        });
+        VirtualTeacherUsageLimiter limiterWithRedis =
+                new VirtualTeacherUsageLimiter(redisProviderReturning(redisTemplate), properties, clock);
+
+        limiterWithRedis.check(42L, 5);
+
+        Object[] rateArgs = calls.get(0);
+        Object[] charsArgs = calls.get(1);
+        assertEquals(String.valueOf(Duration.ofMinutes(2).toMillis()), rateArgs[3],
+                "rate TTL 必须等于 Duration.ofMinutes(2) 的毫秒值");
+        assertEquals(String.valueOf(Duration.ofDays(2).toMillis()), charsArgs[3],
+                "daily chars TTL 必须等于 Duration.ofDays(2) 的毫秒值");
+    }
+
+    /** TEST 4 — 仅首次创建时设置 TTL 的脚本契约（UNIT CONTRACT TEST，不依赖真实 Redis）。 */
+    @Test
+    void scriptContractSetsTtlOnlyOnFirstCreation() {
+        AtomicReference<RedisScript<Long>> capturedScript = new AtomicReference<>();
+        StringRedisTemplate redisTemplate = redisMock();
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(), any())).thenAnswer(inv -> {
+            capturedScript.set(inv.getArgument(0));
+            return 1L;
+        });
+        VirtualTeacherUsageLimiter limiterWithRedis =
+                new VirtualTeacherUsageLimiter(redisProviderReturning(redisTemplate), properties, clock);
+
+        limiterWithRedis.check(42L, 5);
+
+        RedisScript<Long> script = capturedScript.get();
+        assertNotNull(script, "check() 必须通过 RedisScript execute 完成限流递增");
+        String lua = script.getScriptAsString();
+        // 必须使用 INCRBY（而非 INCR），保持任意 amount 语义
+        assertTrue(lua.contains("INCRBY"), "脚本必须使用 INCRBY 保持 amount 语义");
+        // 必须使用 PEXPIRE（毫秒精度）
+        assertTrue(lua.contains("PEXPIRE"), "脚本必须使用 PEXPIRE 设置 TTL");
+        // key 经 KEYS[1]、amount/ttl 经 ARGV 传入
+        assertTrue(lua.contains("KEYS[1]"), "key 必须通过 KEYS[1] 传给脚本");
+        assertTrue(lua.contains("ARGV[1]"), "amount 必须通过 ARGV[1] 传入");
+        assertTrue(lua.contains("ARGV[2]"), "ttl 必须通过 ARGV[2] 传入");
+        // 仅 current == amount（首次创建）时设置 TTL：PEXPIRE 必须位于条件分支内
+        int ifIdx = lua.indexOf("if current == tonumber(ARGV[1])");
+        int pexpireIdx = lua.indexOf("PEXPIRE");
+        int endIdx = lua.indexOf("end");
+        assertTrue(ifIdx >= 0 && ifIdx < pexpireIdx && pexpireIdx < endIdx,
+                "PEXPIRE 必须位于 'current == amount' 条件分支内，后续递增不得刷新 TTL");
+    }
+
+    /** TEST 5 — 脚本失败 fallback：redis.execute 抛 RuntimeException 时，本地 fallback 必须接管。 */
+    @Test
+    void scriptFailureFallsBackToLocalCounting() {
+        properties.getRateLimit().setRequestsPerMinute(2);
+        properties.getRateLimit().setDailyCharacters(100);
+        StringRedisTemplate redisTemplate = redisMock();
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(), any()))
+                .thenThrow(new RuntimeException("Redis 连接失败"));
+        VirtualTeacherUsageLimiter limiterWithRedis =
+                new VirtualTeacherUsageLimiter(redisProviderReturning(redisTemplate), properties, clock);
+
+        limiterWithRedis.check(42L, 5); // 第 1 次：脚本失败 → 本地
+        limiterWithRedis.check(42L, 5); // 第 2 次：脚本失败 → 本地，等于 limit=2
+
+        assertThrows(TooManyRequestsException.class, () -> limiterWithRedis.check(42L, 5)); // 第 3 次超限
+
+        assertEquals(2, limiterWithRedis.localCountersSize(),
+                "脚本失败时必须由本地 fallback 承担计数（rate + daily chars）");
+    }
+
+    /** TEST 6 — existing limits regression：Redis 可用且脚本正常返回时，现有限流语义不变。 */
+    @Test
+    void redisScriptPathPreservesExistingLimitSemantics() {
+        properties.getRateLimit().setRequestsPerMinute(2);
+        properties.getRateLimit().setDailyCharacters(100);
+        Map<String, AtomicLong> counters = new ConcurrentHashMap<>();
+        StringRedisTemplate redisTemplate = redisMock();
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(), any())).thenAnswer(inv -> {
+            String key = ((List<String>) inv.getArgument(1)).get(0);
+            long current = counters.computeIfAbsent(key, k -> new AtomicLong()).incrementAndGet();
+            return current;
+        });
+        VirtualTeacherUsageLimiter limiterWithRedis =
+                new VirtualTeacherUsageLimiter(redisProviderReturning(redisTemplate), properties, clock);
+
+        limiterWithRedis.check(42L, 5); // rate=1, chars=5
+        limiterWithRedis.check(42L, 5); // rate=2, chars=10
+
+        assertThrows(TooManyRequestsException.class, () -> limiterWithRedis.check(42L, 5)); // rate=3 > 2 超限
+
+        assertEquals(0, limiterWithRedis.localCountersSize(), "Redis 正常时不得使用本地 fallback");
     }
 }
