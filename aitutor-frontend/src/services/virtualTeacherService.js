@@ -234,3 +234,57 @@ export async function synthesizeVirtualTeacherSpeech({
   }
   return readAudioResponse(response);
 }
+/**
+ * M8 流式合成：POST /tts/stream，返回带 PCM 契约校验的 ReadableStream reader。
+ *
+ * 与阻塞路径分离：不使用 response.blob()/arrayBuffer()，直接消费响应流。
+ * 保留现有 synthesizeVirtualTeacherSpeech（阻塞 /tts）不变。
+ *
+ * @returns {Promise<{reader: ReadableStreamDefaultReader, headers: Object}>}
+ */
+export async function streamVirtualTeacherSpeech({ courseId, text, voiceType, speed = 1 }) {
+  const token = getToken();
+  const preference = getLocalTeacherPreference();
+  const response = await fetch(`${getApiBase()}/api/virtual-teacher/tts/stream`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/octet-stream',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      courseId,
+      text,
+      voiceType: voiceType ?? preference?.voiceType ?? 'default',
+      speed,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new ApiError('虚拟教师流式语音合成暂不可用', response.status);
+  }
+
+  const headers = {
+    format: response.headers.get('X-Audio-Format') || '',
+    sampleRate: Number(response.headers.get('X-Audio-Sample-Rate')) || 0,
+    channels: Number(response.headers.get('X-Audio-Channels')) || 0,
+    byteOrder: response.headers.get('X-Audio-Byte-Order') || '',
+  };
+
+  // 校验 PCM 契约（S16 / 16000 / mono），不匹配则拒绝进入流式解码
+  const contractOk =
+    headers.format === 'pcm-s16' &&
+    headers.sampleRate === 16000 &&
+    headers.channels === 1 &&
+    (headers.byteOrder === 'little-endian' || headers.byteOrder === 'big-endian');
+  if (!contractOk) {
+    throw new ApiError(`流式音频契约不匹配: ${JSON.stringify(headers)}`, 502);
+  }
+
+  if (!response.body || typeof response.body.getReader !== 'function') {
+    throw new ApiError('当前浏览器不支持流式响应', 501);
+  }
+
+  return { reader: response.body.getReader(), headers };
+}

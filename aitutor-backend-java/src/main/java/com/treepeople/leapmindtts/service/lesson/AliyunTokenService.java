@@ -37,6 +37,7 @@ public class AliyunTokenService {
     // 响应参数
     private static final String KEY_TOKEN = "Token";
     private static final String KEY_ID = "Id";
+    private static final String KEY_EXPIRE_TIME = "ExpireTime";
 
     @Value("${aliyun.access-key-id}")
     private String accessKeyId;
@@ -45,10 +46,20 @@ public class AliyunTokenService {
     private String accessKeySecret;
 
     private Mono<String> cachedTokenMono;
+    private Mono<TokenWithExpiry> cachedTokenWithExpiryMono;
+
+    /**
+     * 令牌及其过期时间（epoch 秒）。
+     * <p>Additive extension for M8 streaming TTS: exposes expiry so the global
+     * NlsClient token can be refreshed before it expires.
+     */
+    public record TokenWithExpiry(String token, long expireEpochSeconds) {
+    }
 
     public Mono<String> getToken() {
         if (this.cachedTokenMono == null) {
-            this.cachedTokenMono = fetchNewToken()
+            this.cachedTokenMono = getTokenWithExpiry()
+                    .map(TokenWithExpiry::token)
                     .cache(token -> Duration.ofHours(10),
                             error -> Duration.ZERO,
                             () -> Duration.ZERO);
@@ -56,7 +67,21 @@ public class AliyunTokenService {
         return this.cachedTokenMono;
     }
 
-    private Mono<String> fetchNewToken() {
+    /**
+     * 返回令牌与过期时间。过期时间缺失时按获取时刻 + 10 小时保守估计。
+     * <p>Additive: does not alter {@link #getToken()} semantics.
+     */
+    public Mono<TokenWithExpiry> getTokenWithExpiry() {
+        if (this.cachedTokenWithExpiryMono == null) {
+            this.cachedTokenWithExpiryMono = fetchNewToken()
+                    .cache(token -> Duration.ofHours(10),
+                            error -> Duration.ZERO,
+                            () -> Duration.ZERO);
+        }
+        return this.cachedTokenWithExpiryMono;
+    }
+
+    private Mono<TokenWithExpiry> fetchNewToken() {
         log.info("正在从阿里云获取新的Token...");
 
         return Mono.fromCallable(() -> {
@@ -80,10 +105,17 @@ public class AliyunTokenService {
 
                 if (response.getHttpStatus() == 200) {
                     JSONObject result = JSON.parseObject(response.getData());
-                    String token = result.getJSONObject(KEY_TOKEN).getString(KEY_ID);
+                    JSONObject tokenObject = result.getJSONObject(KEY_TOKEN);
+                    String token = tokenObject.getString(KEY_ID);
                     if (token != null && !token.isEmpty()) {
-                        log.info("成功获取新Token: {}...", token.substring(0, Math.min(10, token.length())));
-                        return token;
+                        long expireEpochSeconds = tokenObject.getLongValue(KEY_EXPIRE_TIME);
+                        if (expireEpochSeconds <= 0) {
+                            // 部分环境不返回 ExpireTime：按获取时刻 + 10 小时保守估计
+                            expireEpochSeconds = (System.currentTimeMillis() / 1000) + 10 * 3600;
+                        }
+                        log.info("成功获取新Token: {}..., expireEpochSeconds: {}",
+                                token.substring(0, Math.min(10, token.length())), expireEpochSeconds);
+                        return new TokenWithExpiry(token, expireEpochSeconds);
                     } else {
                         throw new RuntimeException("Token为空");
                     }
