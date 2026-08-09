@@ -17,7 +17,6 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import org.springframework.dao.DataAccessException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -26,7 +25,6 @@ import org.springframework.stereotype.Service;
 @Service
 public class UserEventServiceImpl implements UserEventService {
     /** 服务端直调模块白名单：这些 sourceModule 无用户 JWT，只校验 userId 一致。 */
-    private static final Set<String> SERVICE_SOURCE_MODULES = Set.of("M1", "M3");
     private final M6EventJsonCodec codec;
     private final ProfileActorResolver actor;
     private final EventIngestionCore core;
@@ -48,18 +46,15 @@ public class UserEventServiceImpl implements UserEventService {
 
     /** 白名单模块（M1/M3）无 JWT 直调，只校验 userId 一致；其余模块走用户 JWT 鉴权。 */
     private void authorize(HttpServletRequest request, Long pathUserId, LearningEventRequest event) {
-        if (SERVICE_SOURCE_MODULES.contains(event.sourceModule())) {
-            if (!pathUserId.equals(event.userId())) throw accessDenied();
-            return;
-        }
         actor.authorizeSelf(request, pathUserId);
+        if (!pathUserId.equals(event.userId())) throw accessDenied();
     }
 
     @Override
     public EventAck record(Long path, LearningEventRequest event, HttpServletRequest request) {
-        authorize(request, path, event);
         Instant receivedAt = clock.instant().truncatedTo(ChronoUnit.MILLIS);
         core.validate(event);
+        authorize(request, path, event);
         return ack(core.ingest(event, receivedAt), request);
     }
 

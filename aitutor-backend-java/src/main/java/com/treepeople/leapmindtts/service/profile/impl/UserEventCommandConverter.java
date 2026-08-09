@@ -14,17 +14,18 @@ import org.springframework.stereotype.Component;
 /** Converts a persisted user_event row into the engine command; any failure is an illegal event, never a partial conversion. */
 @Component
 public class UserEventCommandConverter {
-    private static final Map<String, Class<? extends LearningEventPayload>> PAYLOAD_TYPES = Map.of(
-            "answer_question", LearningEventPayload.AnswerQuestion.class,
-            "finish_practice", LearningEventPayload.FinishPractice.class,
-            "request_explanation", LearningEventPayload.RequestExplanation.class,
-            "explanation_feedback", LearningEventPayload.ExplanationFeedback.class,
-            "weak_point_changed", LearningEventPayload.WeakPointChanged.class,
-            "lecture_interact", LearningEventPayload.LectureInteract.class,
-            "lesson_material_used", LearningEventPayload.LessonMaterialUsed.class,
-            "ask_doubt", LearningEventPayload.AskDoubt.class,
-            "mark_reviewed", LearningEventPayload.MarkReviewed.class,
-            "preference_changed", LearningEventPayload.PreferenceChanged.class);
+    private static final Map<String, Class<? extends LearningEventPayload>> PAYLOAD_TYPES = Map.ofEntries(
+            Map.entry("answer_question", LearningEventPayload.AnswerQuestion.class),
+            Map.entry("finish_practice", LearningEventPayload.FinishPractice.class),
+            Map.entry("request_explanation", LearningEventPayload.RequestExplanation.class),
+            Map.entry("explanation_feedback", LearningEventPayload.ExplanationFeedback.class),
+            Map.entry("weak_point_changed", LearningEventPayload.WeakPointChanged.class),
+            Map.entry("lecture_interact", LearningEventPayload.LectureInteract.class),
+            Map.entry("lesson_material_used", LearningEventPayload.LessonMaterialUsed.class),
+            Map.entry("ask_doubt", LearningEventPayload.AskDoubt.class),
+            Map.entry("mark_reviewed", LearningEventPayload.MarkReviewed.class),
+            Map.entry("preference_changed", LearningEventPayload.PreferenceChanged.class),
+            Map.entry("wrong_question_changed", LearningEventPayload.WrongQuestionChanged.class));
 
     private final ObjectMapper mapper;
 
