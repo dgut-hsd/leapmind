@@ -7,13 +7,14 @@ import { getOrCreateCourseId, setCourseId } from "../../features/chat/pptSession
 import { fetchSegments } from "../../features/chat/pptApi";
 import { showError, showSuccess } from "../../features/chat/pptUi";
 import { state as playerState } from "../../features/chat/pptState";
-import { startPlayback, updatePlaybackControls, updatePlaybackStatus } from "../../features/chat/pptController";
+import { startPlayback, stopPlayback, updatePlaybackControls, updatePlaybackStatus } from "../../features/chat/pptController";
+import { handleLectureSlideChange } from "../../features/virtualTeacher/lecturePlaybackBridge.js";
 import { get } from "../../services/api";
 
 const IFRAME_WIDTH = 1280;
 const IFRAME_HEIGHT = 720;
 
-const SlideViewer = ({ projectId, courseId: courseIdProp }) => {
+const SlideViewer = ({ projectId, courseId: courseIdProp, onSlideChange, onPlayNarration }) => {
     // 分支A：有 courseId，改为从后端拉取 slides-data 并用 iframe 渲染
     // 原写死路由: ${apiBase}/api/courses/${courseId}/slides-data
     // 改为相对路径以触发 Vite 代理
@@ -23,6 +24,18 @@ const SlideViewer = ({ projectId, courseId: courseIdProp }) => {
     // }, []);
     // 兼容旧入参：优先使用 courseId，其次回退到 projectId
     const courseId = useMemo(() => courseIdProp ?? projectId, [courseIdProp, projectId]);
+
+    // B1: 保持最新 onSlideChange 回调（避免 transition 闭包捕获过期值）
+    const onSlideChangeRef = useRef(onSlideChange);
+    useEffect(() => {
+        onSlideChangeRef.current = onSlideChange;
+    }, [onSlideChange]);
+    // A7: 可选 canonical Play 路由 —— 提供时 Play 走外部生命周期（LectureSpeechAdapter），
+    // 不并行启动 legacy startPlayback；未提供时保持所有既有调用者行为不变。
+    const onPlayNarrationRef = useRef(onPlayNarration);
+    useEffect(() => {
+        onPlayNarrationRef.current = onPlayNarration;
+    }, [onPlayNarration]);
 
     // 将路由/入参的 courseId 同步为全局会话的 source of truth，避免误用旧的 localStorage 值
     useEffect(() => {
@@ -179,12 +192,33 @@ const SlideViewer = ({ projectId, courseId: courseIdProp }) => {
                 setTransitioningFromIndex(null);
                 setEnterActive(false);
                 transitionTimerRef.current = null;
+                // B1: 接通此前未调用的 onSlideChange prop（M4 页面据此获得 canonical 页码，
+                // 用于 M8 语音取消/字幕/追问上下文；不改变 M4 自身导航所有权）。
+                // FINAL.1: 附带真实 slide 元数据（title/html），供音频源回退决策使用；
+                // 兼容仅期望 pageNumber 的旧调用者。
+                try {
+                    const slideMeta = remoteSlides[nextIndex] || null;
+                    onSlideChangeRef.current?.(
+                        nextIndex + 1,
+                        slideMeta
+                            ? {
+                                slideId: String(slideMeta.slide_id ?? slideMeta.slideId ?? nextIndex + 1),
+                                pageNumber: Number(slideMeta.page_number) || nextIndex + 1,
+                                title: slideMeta.title || '',
+                                html_content: slideMeta.html_content || slideMeta.htmlContent || slideMeta.html || slideMeta.content_html || '',
+                            }
+                            : undefined,
+                    );
+                } catch (_) {}
             }, 350);
         };
 
         const handleRemoteNext = () => {
             if (totalRemote === 0) return;
             const next = (currentRemoteIndex + 1) % totalRemote;
+            // B1.1: canonical slide 变化 → 立即停止 legacy 预生成播放（真实 M4 音频），
+            // 防止声音跨页残留；同时经由 onSlideChange 通知页面生命周期。
+            try { handleLectureSlideChange({ stopLegacyPlayback: stopPlayback }); } catch (_) {}
             setCurrentRemoteIndex(next);
             setRemoteSubtitleText('<span class="text-slate-400">点击“播放字幕”开始</span>');
             transitionToIndex(next, 'next');
@@ -192,6 +226,8 @@ const SlideViewer = ({ projectId, courseId: courseIdProp }) => {
         const handleRemotePrev = () => {
             if (totalRemote === 0) return;
             const next = (currentRemoteIndex - 1 + totalRemote) % totalRemote;
+            // B1.1: 同 NEXT —— 停止 legacy 预生成播放。
+            try { handleLectureSlideChange({ stopLegacyPlayback: stopPlayback }); } catch (_) {}
             setCurrentRemoteIndex(next);
             setRemoteSubtitleText('<span class="text-slate-400">点击“播放字幕”开始</span>');
             transitionToIndex(next, 'prev');
@@ -203,13 +239,29 @@ const SlideViewer = ({ projectId, courseId: courseIdProp }) => {
             if (totalRemote === 0) return;
             const currentRemoteSlide = remoteSlides[displayedRemoteIndex];
             const pageNumber = Number(currentRemoteSlide?.page_number) || displayedRemoteIndex + 1;
-            // 优先使用当前页面传入的 courseId，其次回退到全局/LocalStorage，避免误用旧课程ID
             const courseIdToken = String(courseId || playerState.currentCourseId || (typeof localStorage !== 'undefined' ? localStorage.getItem('currentCourseId') : '') || '');
             if (!courseIdToken) {
                 showError('缺少有效 course_id，请先在列表页触发合成以获取 course_id');
                 return;
             }
             setCourseId(courseIdToken);
+
+            // A7: 若页面注入了 canonical Play 处理器（LectureSpeechAdapter 统一生命周期），
+            // 则 Play 只路由到外部处理器，不再并行启动 legacy startPlayback。
+            const externalPlay = onPlayNarrationRef.current;
+            if (typeof externalPlay === 'function') {
+                try {
+                    externalPlay({
+                        courseId: courseIdToken,
+                        pageNumber,
+                        slideId: String(currentRemoteSlide?.slide_id ?? currentRemoteSlide?.slideId ?? pageNumber),
+                        title: currentRemoteSlide?.title || '',
+                        html_content: currentRemoteSlide?.html_content || currentRemoteSlide?.htmlContent || currentRemoteSlide?.html || currentRemoteSlide?.content_html || '',
+                    });
+                } catch (_) {}
+                return;
+            }
+
             try {
                 showSuccess('正在加载页面音频数据...');
                 // 1) 获取片段信息

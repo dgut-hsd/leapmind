@@ -25,6 +25,20 @@ public class VirtualTeacherAuditService {
         insertSafely(logEntry);
     }
 
+    /** 流式合成成功审计（additive，供 /tts/stream 使用）。 */
+    public void recordStreamingTts(
+            Long userId,
+            VirtualTeacherTtsRequest request,
+            boolean cacheHit,
+            long audioSize,
+            long latencyMs) {
+        VirtualTeacherTtsAuditLog logEntry = baseLog(userId, request, latencyMs);
+        logEntry.setStatus("SUCCESS");
+        logEntry.setCacheHit(cacheHit);
+        logEntry.setAudioSize(audioSize);
+        insertSafely(logEntry);
+    }
+
     public void recordTtsFailure(
             Long userId,
             VirtualTeacherTtsRequest request,

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   Brain,
@@ -25,8 +25,10 @@ import {
   fetchTeacherAvatars,
   fetchTeacherPreference,
   saveTeacherPreference,
+  streamVirtualTeacherSpeech,
   synthesizeVirtualTeacherSpeech,
 } from '@/services/virtualTeacherService.js';
+import { StreamingPlayback, STREAM_STATE, STREAM_FAILURE_ACTION, decideStreamingFailureAction } from '@/features/virtualTeacher/streamingPlayback.js';
 import { recordQuestionContext } from '@/services/learningProfileService.js';
 import { getUserInfo } from '@/utils/tokenManager.js';
 
@@ -111,6 +113,8 @@ export default function TeacherAvatarPage({ courseId = '', onBack }) {
     { role: 'teacher', text: '我已经准备好讲解了。你可以先点“开始讲解”，也可以直接问一个问题。' },
   ]);
   const [speechState, setSpeechState] = useState('idle');
+  const [streamState, setStreamState] = useState(null); // PREPARING_SPEECH / STREAMING_BUFFERING / PLAYING / PAUSED / ENDED / STREAM_ERROR / AUTOPLAY_BLOCKED
+  const streamingPlaybackRef = useRef(null);
   const [askState, setAskState] = useState('idle');
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [showAvatarPanel, setShowAvatarPanel] = useState(false);
@@ -256,7 +260,90 @@ export default function TeacherAvatarPage({ courseId = '', onBack }) {
       ...prev,
       { role: 'teacher', text: script },
     ]);
-    speakText(script, '正在讲解：' + currentSlide.title);
+    void speakTextStreaming(script, '正在讲解：' + currentSlide.title);
+  };
+
+  /**
+   * 流式讲解（S3 证明）：优先走 /tts/stream + ReadableStream 播放，
+   * 流式路径不可用时回退到现有阻塞 /tts 播放。
+   */
+  const speakTextStreaming = async (text, label = '正在讲解') => {
+    if (!text) return;
+    setSpeechState('speaking');
+    setDemoState(label);
+    setStreamState(STREAM_STATE.PREPARING_SPEECH);
+
+    const emote = viewer?.model?.emoteController;
+    if (emote) {
+      emote.playEmotion('happy');
+      emote.playHeadMotion('smallNod');
+    }
+
+    let playback = null;
+    try {
+      const { reader, headers } = await streamVirtualTeacherSpeech({
+        courseId: activeLesson.id,
+        text,
+        voiceType: selected?.voiceType,
+      });
+      playback = new StreamingPlayback({
+        sampleRate: headers.sampleRate,
+        channels: headers.channels,
+        byteOrder: headers.byteOrder,
+        onStateChange: (state) => {
+          setStreamState(state);
+          if (state === STREAM_STATE.ENDED || state === STREAM_STATE.STREAM_ERROR) {
+            setSpeechState('idle');
+          }
+        },
+        onLipSyncFrame: (weights, volume, active) => {
+          // 将流式音频分析结果驱动 3D 教师口型（失败不影响音频）
+          try {
+            const emote = viewer?.model?.emoteController;
+            if (!emote) return;
+            if (weights) {
+              emote.lipSyncWeights(weights);
+            } else if (active || volume > 0) {
+              emote.lipSync('aa', volume);
+            }
+          } catch (_) {
+            // lip-sync 失败不终止 TTS 播放
+          }
+        },
+      });
+      streamingPlaybackRef.current = playback;
+      await playback.playFromReader(reader);
+    } catch (error) {
+      // 纯业务规则：零 PCM 前失败可回退；首个 PCM 后失败不回退；取消视为结束
+      const action = decideStreamingFailureAction({
+        hasConsumedPcm: playback != null && playback.hasConsumedPcm(),
+        aborted: error?.name === 'AbortError',
+      });
+      if (action === STREAM_FAILURE_ACTION.STREAM_ERROR) {
+        // 已调度首个 PCM：任何后续失败都不得回退阻塞 /tts（避免重复讲解、
+        // 双 TTS 调用、双配额与音频重叠）
+        playback.stop();
+        setStreamState(STREAM_STATE.STREAM_ERROR);
+        setMessages((prev) => [
+          ...prev,
+          { role: 'system', text: '流式语音播放中断，请点击重试重新讲解。' },
+        ]);
+        setSpeechState('idle');
+        return;
+      }
+      if (action === STREAM_FAILURE_ACTION.ENDED) {
+        // 用户主动取消：不算失败
+        setStreamState(STREAM_STATE.ENDED);
+        setSpeechState('idle');
+        return;
+      }
+      // FALLBACK_BLOCKING：零 PCM 消费前的失败（接口不可用 / 契约不匹配 / 初始化失败）：
+      // 允许恰好一次阻塞回退
+      setStreamState(null);
+      await speakText(text, label);
+    } finally {
+      window.setTimeout(() => setDemoState(''), 1600);
+    }
   };
 
   const handleAsk = async () => {
@@ -510,15 +597,22 @@ export default function TeacherAvatarPage({ courseId = '', onBack }) {
                 <p className="text-sm font-semibold text-cyan-100/70">教师讲课</p>
                 <h2 className="text-2xl font-black">{currentSlide.title}</h2>
               </div>
-              <button
-                type="button"
-                onClick={handleTeach}
-                disabled={speechState === 'speaking'}
-                className="inline-flex items-center gap-2 rounded-2xl bg-amber-300 px-5 py-3 font-black text-indigo-950 shadow-lg transition hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-70"
-              >
-                {speechState === 'speaking' ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} />}
-                开始讲解
-              </button>
+              <div className="flex items-center gap-2">
+                {streamState && (
+                  <span className="rounded-full border border-cyan-200/30 bg-cyan-300/10 px-3 py-1.5 text-xs font-bold text-cyan-100">
+                    流式：{streamState}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={handleTeach}
+                  disabled={speechState === 'speaking'}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-amber-300 px-5 py-3 font-black text-indigo-950 shadow-lg transition hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-70"
+                >
+                  {speechState === 'speaking' ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} />}
+                  开始讲解
+                </button>
+              </div>
             </div>
             <div className="mb-5 flex flex-wrap gap-2">
               {lessons.map((lesson) => (

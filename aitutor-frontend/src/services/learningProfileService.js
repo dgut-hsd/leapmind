@@ -316,14 +316,15 @@ function createDemoDetail(knowledgePointId) {
 
 function normalizeUser(source, fallback) {
   const nested = pick(source, ['user', 'student', 'userInfo', 'profile'], source);
+  const safeFallback = isObject(fallback) ? fallback : {};
   return {
-    id: String(pick(nested, ['id', 'userId', 'studentId', 'uid'], fallback.id)),
-    name: pick(nested, ['name', 'realName', 'nickname', 'username', 'studentName'], fallback.name),
-    avatar: pick(nested, ['avatar', 'avatarUrl', 'headImage', 'profileImage'], fallback.avatar),
-    university: pick(nested, ['university', 'school', 'collegeName'], fallback.university),
-    major: pick(nested, ['major', 'majorName', 'specialty'], fallback.major),
-    grade: pick(nested, ['grade', 'gradeName', 'year'], fallback.grade),
-    bio: pick(nested, ['bio', 'description', 'learningGoal', 'goal'], fallback.bio),
+    id: String(pick(nested, ['id', 'userId', 'studentId', 'uid'], safeFallback.id ?? '')),
+    name: pick(nested, ['name', 'realName', 'nickname', 'username', 'studentName'], safeFallback.name ?? ''),
+    avatar: pick(nested, ['avatar', 'avatarUrl', 'headImage', 'profileImage'], safeFallback.avatar ?? ''),
+    university: pick(nested, ['university', 'school', 'collegeName'], safeFallback.university ?? ''),
+    major: pick(nested, ['major', 'majorName', 'specialty'], safeFallback.major ?? ''),
+    grade: pick(nested, ['grade', 'gradeName', 'year'], safeFallback.grade ?? ''),
+    bio: pick(nested, ['bio', 'description', 'learningGoal', 'goal'], safeFallback.bio ?? ''),
   };
 }
 
@@ -346,7 +347,15 @@ function normalizeSummary(source, fallback) {
 function normalizeStats(source, summary, fallback) {
   const raw = collectionFrom(source, ['stats', 'statCards', 'statistics']);
   if (!raw.length) {
-    return fallback.map((item) => {
+    const template = Array.isArray(fallback) && fallback.length
+      ? fallback
+      : [
+          { key: 'studyTime', label: '\u672c\u5468\u5b66\u4e60', value: summary.weeklyStudyMinutes, unit: '\u5206\u949f', change: 0 },
+          { key: 'mastery', label: '\u7efc\u5408\u638c\u63e1\u5ea6', value: summary.overallMastery, unit: '%', change: summary.masteryChange },
+          { key: 'streak', label: '\u8fde\u7eed\u5b66\u4e60', value: summary.streakDays, unit: '\u5929', change: 0 },
+          { key: 'exercises', label: '\u7d2f\u8ba1\u7ec3\u4e60', value: summary.completedExercises, unit: '\u9898', change: 0 },
+        ];
+    return template.map((item) => {
       if (item.key === 'studyTime') return { ...item, value: summary.weeklyStudyMinutes };
       if (item.key === 'mastery') return { ...item, value: summary.overallMastery, change: summary.masteryChange };
       if (item.key === 'streak') return { ...item, value: summary.streakDays };
@@ -366,7 +375,7 @@ function normalizeStats(source, summary, fallback) {
 
 function normalizeDimensions(source, fallback) {
   const raw = collectionFrom(source, ['dimensions', 'abilities', 'abilityDimensions', 'radarData']);
-  if (!raw.length) return clone(fallback);
+  if (!raw.length) return fallback ? clone(fallback) : [];
 
   return raw.map((item, index) => ({
     key: String(pick(item, ['key', 'id', 'code'], `dimension-${index + 1}`)),
@@ -384,7 +393,7 @@ function deriveDimensionsFromKnowledge(source, knowledgeRaw, fallback) {
   const hasRealDimensions = collectionFrom(source, ['dimensions', 'abilities', 'abilityDimensions', 'radarData']).length > 0;
   if (hasRealDimensions) return dims;
 
-  if (!knowledgeRaw || !knowledgeRaw.length) return clone(fallback);
+  if (!knowledgeRaw || !knowledgeRaw.length) return fallback ? clone(fallback) : [];
 
   const total = knowledgeRaw.length;
   const avgMastery = knowledgeRaw.reduce((sum, k) => sum + numberValue(pick(k, ['masteryScore', 'mastery', 'score'], 0), 0), 0) / total;
@@ -442,7 +451,7 @@ function normalizeKnowledgeNode(item, index, fallbackSubject = '') {
 
 function normalizeKnowledgeTree(source, fallback) {
   const raw = collectionFrom(source, ['knowledgeTree', 'knowledge', 'knowledgeStatus', 'knowledgeStatuses', 'knowledgePoints', 'statuses', 'records', 'list', 'items']);
-  if (!raw.length) return clone(fallback);
+  if (!raw.length) return fallback ? clone(fallback) : [];
 
   const nodes = raw.map((item, index) => normalizeKnowledgeNode(item, index));
   if (nodes.some((node) => node.children.length)) return nodes;
@@ -555,12 +564,12 @@ function deriveTimelineFromProfile(source, fallback) {
     });
   }
 
-  return entries.length ? entries : clone(fallback);
+  return entries.length ? entries : (fallback ? clone(fallback) : []);
 }
 
 function normalizeTimeline(source, fallback) {
   const raw = collectionFrom(source, ['timeline', 'learningTimeline', 'recentActivities', 'activities', 'learningRecords']);
-  if (!raw.length) return clone(fallback);
+  if (!raw.length) return fallback ? clone(fallback) : [];
 
   return raw.map((item, index) => ({
     id: String(pick(item, ['id', 'recordId', 'activityId'], `activity-${index + 1}`)),
@@ -591,7 +600,7 @@ function reminderStatus(item) {
 
 function normalizeReminders(source, fallback) {
   const raw = collectionFrom(source, ['reminders', 'reviewReminders', 'reviewPlans', 'records', 'list', 'items']);
-  if (!raw.length) return clone(fallback);
+  if (!raw.length) return fallback ? clone(fallback) : [];
 
   return raw.map((item, index) => ({
     id: String(pick(item, ['id', 'reminderId', 'planId'], `reminder-${index + 1}`)),
@@ -684,17 +693,20 @@ export async function getLearningProfile(userId) {
   const isDemo = !requestSucceeded(profileResult) || !profileReady;
 
   const summary = deriveSummaryFromProfile(profileSource || {}, knowledgeRaw, demo.summary);
+  // 字段级回退策略：isDemo（请求失败/未就绪）时才允许 demo 数据；
+  // 请求成功但后端未返回某字段 → 返回空集合/派生值，由页面展示诚实空状态，不伪造生产数据。
+  const fieldFallback = (demoValue) => (isDemo ? demoValue : null);
   return {
     isDemo,
     isNotReady: false,
     demoReason: isDemo ? demo.demoReason : null,
-    user: normalizeUser(profileSource || {}, demo.user),
+    user: normalizeUser(profileSource || {}, isDemo ? demo.user : {}),
     summary,
-    stats: normalizeStats(profileSource || {}, summary, demo.stats),
-    dimensions: deriveDimensionsFromKnowledge(profileSource || {}, knowledgeRaw, demo.dimensions),
-    knowledgeTree: normalizeKnowledgeTree(profileSource || {}, demo.knowledgeTree),
-    timeline: deriveTimelineFromProfile(profileSource || {}, demo.timeline),
-    reminders: normalizeReminders(reminderSource || profileSource || {}, demo.reminders),
+    stats: normalizeStats(profileSource || {}, summary, fieldFallback(demo.stats)),
+    dimensions: deriveDimensionsFromKnowledge(profileSource || {}, knowledgeRaw, fieldFallback(demo.dimensions)),
+    knowledgeTree: normalizeKnowledgeTree(profileSource || {}, fieldFallback(demo.knowledgeTree)),
+    timeline: deriveTimelineFromProfile(profileSource || {}, fieldFallback(demo.timeline)),
+    reminders: normalizeReminders(reminderSource || profileSource || {}, fieldFallback(demo.reminders)),
     preferences: normalizePreferences(profileSource || {}, demo.preferences),
   };
 }
@@ -702,13 +714,17 @@ export async function getLearningProfile(userId) {
 function findKnowledgePoint(source, knowledgePointId) {
   if (!source) return null;
 
-  const possibleDetail = isObject(source)
-    ? pick(source, ['detail', 'knowledgePoint', 'knowledgeStatus'], source)
-    : null;
-  if (isObject(possibleDetail)) {
-    const directId = pick(possibleDetail, ['id', 'kpId', 'knowledgePointId', 'pointId', 'knowledgeId'], null);
-    if (directId === null || String(directId) === String(knowledgePointId)) return possibleDetail;
+  // 嵌套详情容器（detail / knowledgePoint / knowledgeStatus）
+  for (const containerKey of ['detail', 'knowledgePoint', 'knowledgeStatus']) {
+    const container = isObject(source) ? source[containerKey] : null;
+    if (!isObject(container)) continue;
+    const id = pick(container, ['id', 'kpId', 'knowledgePointId', 'pointId', 'knowledgeId'], null);
+    if (id !== null && String(id) === String(knowledgePointId)) return container;
   }
+
+  // source 自身即详情（且 id 匹配，避免把整个列表响应误当详情）
+  const selfId = pick(source, ['id', 'kpId', 'knowledgePointId', 'pointId', 'knowledgeId'], null);
+  if (selfId !== null && String(selfId) === String(knowledgePointId)) return source;
 
   const collection = collectionFrom(source, ['knowledge', 'knowledgeStatus', 'knowledgeStatuses', 'knowledgePoints', 'records', 'list', 'items']);
   return collection.find((item) => String(
@@ -773,7 +789,7 @@ function normalizeMetrics(source, fallback) {
 
 function normalizePrerequisites(source, fallback) {
   const raw = collectionFrom(source, ['prerequisites', 'preKnowledgePoints', 'dependencies', 'preconditions']);
-  if (!raw.length) return clone(fallback);
+  if (!raw.length) return fallback ? clone(fallback) : [];
   return raw.map((item, index) => {
     const mastery = percentage(pick(item, ['mastery', 'masteryRate', 'score'], 0));
     return {
@@ -787,7 +803,7 @@ function normalizePrerequisites(source, fallback) {
 
 function normalizeHistory(source, fallback) {
   const raw = collectionFrom(source, ['history', 'masteryHistory', 'learningHistory', 'trendData', 'records']);
-  if (!raw.length) return clone(fallback);
+  if (!raw.length) return fallback ? clone(fallback) : [];
   return raw.map((item) => ({
     date: pick(item, ['date', 'time', 'createdAt', 'studyDate'], ''),
     mastery: percentage(pick(item, ['mastery', 'masteryRate', 'score'], 0)),
@@ -806,7 +822,7 @@ function normalizeReviewPlan(source, remindersSource, knowledgePointId, fallback
         return !pointId || String(pointId) === String(knowledgePointId);
       });
   }
-  if (!raw.length) return clone(fallback);
+  if (!raw.length) return fallback ? clone(fallback) : [];
 
   return raw.map((item, index) => ({
     id: String(pick(item, ['id', 'planId', 'reminderId'], `${knowledgePointId}-review-${index + 1}`)),
@@ -820,7 +836,7 @@ function normalizeReviewPlan(source, remindersSource, knowledgePointId, fallback
 
 function normalizeExercises(source, fallback) {
   const raw = collectionFrom(source, ['recommendedExercises', 'recommendations', 'exercises', 'practiceRecommendations']);
-  if (!raw.length) return clone(fallback);
+  if (!raw.length) return fallback ? clone(fallback) : [];
   return raw.map((item, index) => ({
     id: String(pick(item, ['id', 'exerciseId', 'questionSetId'], `exercise-${index + 1}`)),
     title: pick(item, ['title', 'name', 'exerciseName'], '\u63a8\u8350\u7ec3\u4e60'),
@@ -870,6 +886,9 @@ export async function getKnowledgePointDetail(userId, knowledgePointId) {
   const mastery = masteryPercentage(pick(pointSource, ['mastery', 'masteryScore', 'masteryRate', 'score', 'progress'], demo.mastery), demo.mastery);
   const isDemo = !requestSucceeded(knowledgeResult);
   const evidenceCount = numberValue(pick(pointSource, ['evidenceCount'], 0), 0);
+  // 字段级回退策略：isDemo（请求失败/未就绪）时才允许 demo 数据；
+  // 请求成功但后端未返回某字段 → 返回空集合，由页面展示诚实空状态，不伪造生产数据。
+  const fieldFallback = (demoValue) => (isDemo ? demoValue : null);
 
   return {
     isDemo,
@@ -888,10 +907,10 @@ export async function getKnowledgePointDetail(userId, knowledgePointId) {
       correctCount: evidenceCount > 0 ? Math.round(evidenceCount * mastery / 100) : normalizeMetrics(pointSource, demo.metrics).correctCount,
       wrongCount: evidenceCount > 0 ? evidenceCount - Math.round(evidenceCount * mastery / 100) : normalizeMetrics(pointSource, demo.metrics).wrongCount,
     },
-    prerequisites: normalizePrerequisites(pointSource, demo.prerequisites),
-    history: normalizeHistory(pointSource, demo.history),
-    reviewPlan: normalizeReviewPlan(pointSource, reminderSource || {}, normalizedPointId, demo.reviewPlan),
-    recommendedExercises: normalizeExercises(pointSource, demo.recommendedExercises),
+    prerequisites: normalizePrerequisites(pointSource, fieldFallback(demo.prerequisites)),
+    history: normalizeHistory(pointSource, fieldFallback(demo.history)),
+    reviewPlan: normalizeReviewPlan(pointSource, reminderSource || {}, normalizedPointId, fieldFallback(demo.reviewPlan)),
+    recommendedExercises: normalizeExercises(pointSource, fieldFallback(demo.recommendedExercises)),
   };
 }
 

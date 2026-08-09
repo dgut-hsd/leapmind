@@ -30,6 +30,8 @@ class VirtualTeacherTtsServiceTest {
     @Mock
     private TextToSpeechService textToSpeechService;
     @Mock
+    private VirtualTeacherStreamingTtsClient streamingTtsClient;
+    @Mock
     private VirtualTeacherTtsCache cache;
     @Mock
     private AudioStorageService storage;
@@ -49,6 +51,7 @@ class VirtualTeacherTtsServiceTest {
         properties = new VirtualTeacherProperties();
         service = new VirtualTeacherTtsService(
                 textToSpeechService,
+                streamingTtsClient,
                 cache,
                 storage,
                 properties,
