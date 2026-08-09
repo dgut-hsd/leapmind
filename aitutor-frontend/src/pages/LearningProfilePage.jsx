@@ -232,7 +232,10 @@ export default function LearningProfilePage({ onBack, onOpenKnowledgePoint }) {
               <div><h3 className="text-xl font-bold">近期学习轨迹</h3><p className="text-sm text-white/45">记录每一次进步</p></div>
             </div>
             <div className="relative mt-6 space-y-5 pl-6 before:absolute before:bottom-2 before:left-[5px] before:top-2 before:w-px before:bg-white/15">
-              {(profile.timeline || []).map((event) => (
+              {(profile.timeline || []).length === 0 ? (
+                <div className="rounded-2xl bg-black/10 p-6 text-center text-sm text-white/45">暂无学习记录，完成一次学习后会展示在这里。</div>
+              ) : (
+              (profile.timeline || []).map((event) => (
                 <div key={event.id || `${event.title}-${event.date}`} className="relative">
                   <span className="absolute -left-6 top-2 h-3 w-3 rounded-full border-2 border-[#241054] bg-cyan-300" />
                   <div className="flex flex-col justify-between gap-2 rounded-2xl border border-white/10 bg-white/[0.06] p-4 sm:flex-row sm:items-center">
@@ -240,7 +243,8 @@ export default function LearningProfilePage({ onBack, onOpenKnowledgePoint }) {
                     <time className="shrink-0 text-xs text-violet-200/60">{formatDate(event.time || event.date)}</time>
                   </div>
                 </div>
-              ))}
+              ))
+              )}
             </div>
           </article>
 
