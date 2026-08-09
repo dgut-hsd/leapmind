@@ -8,6 +8,7 @@ import com.treepeople.leapmindtts.pojo.vo.PPTSlidesVO;
 import com.treepeople.leapmindtts.service.lesson.PPTSlidesService;
 import org.springframework.stereotype.Service;
 
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -22,12 +23,21 @@ public class PPTSlidesServiceImpl extends ServiceImpl<PPTSlidesMapper, PPTSlides
     @Override
     public List<PPTSlidesVO> getPPTSlidesList(String courseId) {
         QueryWrapper<PPTSlides> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("course_id", courseId);
+        queryWrapper.eq("course_id", courseId)
+                .orderByAsc("slide_index");
         List<PPTSlides> pptSlidesList = this.list(queryWrapper);
-        List<PPTSlidesVO> pptSlidesVOList = pptSlidesList.stream().map(pptSlides -> new PPTSlidesVO(pptSlides.getCourseId(), pptSlides.getTitle(), pptSlides.getHtmlContent())).toList();
-        if (pptSlidesVOList.isEmpty()){
-            return null;
+        if (pptSlidesList == null || pptSlidesList.isEmpty()) {
+            return Collections.emptyList();
         }
-        return pptSlidesVOList;
+        return pptSlidesList.stream()
+                .map(pptSlides -> PPTSlidesVO.builder()
+                        .courseId(pptSlides.getCourseId())
+                        .slideIndex(pptSlides.getSlideIndex())
+                        .slideId(pptSlides.getSlideId())
+                        .title(pptSlides.getTitle())
+                        .contentType(pptSlides.getContentType())
+                        .htmlContent(pptSlides.getHtmlContent())
+                        .build())
+                .toList();
     }
 }
