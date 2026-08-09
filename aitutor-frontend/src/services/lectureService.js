@@ -1,0 +1,358 @@
+/**
+ * M4 讲课模块 —— Service 层
+ * 
+ * 已对接真实后端（2026-08-07）：
+ *   - 讲课文件上传 → POST /api/teaching/{courseId}/upload（M4 TeachingController）
+ *   - 讲课生成 SSE → POST /api/teaching/{courseId}/stream-generate（M4 TeachingController）
+ *   - 讲课内容 CRUD（历史列表/详情/删除/发布）→ Java GET/PUT/DELETE /api/lesson-prep/contents（M5 备课）
+ *   - 薄弱知识点查询 → GET /api/weak-points（M3 曾俊桥 / develop 分支）
+ *   - M6 事件上报 → POST /api/events/collect（M6 画像引擎）
+ * 
+ * 模式说明：
+ *   - 全部默认走真实后端（设置 VITE_LECTURE_MOCK=true 回退 Mock）
+ */
+
+import { mockParseResult, mockPPTStructure, mockGenerationEvents, mockHistoryList } from '../data/mockLecture';
+import { get, request } from './api';
+
+// ─── 模式开关 ──────────────────────────────────────
+
+/**
+ * Mock 开关
+ * - 默认走真实后端（VITE_LECTURE_MOCK 不设或为 false）。
+ * - 开发期如需回退 Mock：设置环境变量 VITE_LECTURE_MOCK=true。
+ * - 文件解析 / 讲课生成目前始终走 Mock（等许沣睿 /api/lecture/* 就绪后移除）。
+ */
+const USE_MOCK = import.meta.env.VITE_LECTURE_MOCK === 'true';
+
+/**
+ * 解包后端统一响应 ApiResponse：{ code, message, data, timestamp }
+ * 与 m2.js 的对接模式保持一致
+ */
+function unwrap(res) {
+  if (res && res.code === 200) return res.data;
+  return res;
+}
+
+/**
+ * 后端 TeachingContentVO（prepId 等）→ 前端历史卡片（lectureId 等）
+ */
+function toLectureItem(vo = {}) {
+  return {
+    lectureId: vo.prepId ?? vo.id,
+    title: vo.title || '',
+    status: vo.status || 'draft',
+    createdAt: vo.createdAt || '',
+    // pptStructure 是 JSON 字符串，解析为 slides
+    slides: parsePptStructure(vo.pptStructure),
+  };
+}
+
+/**
+ * 后端 pptStructure（JSON 字符串）→ 前端 slides 数组
+ * 格式见 SlideRenderer_接口约定.md：page_num/bullet_points/...（snake_case 扁平）
+ */
+function parsePptStructure(pptStructure) {
+  if (!pptStructure) return [];
+  try {
+    const parsed = typeof pptStructure === 'string' ? JSON.parse(pptStructure) : pptStructure;
+    const slides = Array.isArray(parsed) ? parsed : parsed?.slides;
+    if (!Array.isArray(slides)) return [];
+    // 后端 snake_case → 前端 SlideData 驼峰
+    return slides.map((s) => ({
+      pageNum: s.page_num ?? s.pageNum,
+      type: s.type || 'content',
+      title: s.title || '',
+      bulletPoints: s.bullet_points ?? s.bulletPoints ?? [],
+      imageSuggestion: s.image_suggestion ?? s.imageSuggestion,
+      formula: s.formula,
+      highlightPoints: s.highlight_points ?? s.highlightPoints ?? [],
+      interaction: s.interaction ?? null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+// ─── 0. 薄弱知识点查询（M3 曾俊桥 / develop 分支，始终走真实） ──
+
+/**
+ * 查询用户薄弱知识点列表
+ * GET /api/weak-points?userId=&subject=&status=
+ * 
+ * 后端返回 ApiResponse<List<UserWeakPointVO>>
+ * UserWeakPointVO: { id, knowledgePoint, subject, weaknessLevel, errorCount, totalCount,
+ *                    accuracyRate, lastErrorTime, status, aiAnalysis, aiSuggestion, ... }
+ * 
+ * 映射为前端 WeakPoint：{ kpId, kpName, weaknessScore }
+ * - kpId            ← id（数据库主键，唯一标识该薄弱点记录）
+ * - kpName          ← knowledgePoint
+ * - weaknessScore   ← 优先取 weaknessScore（Python 引擎三维加权，文档 v1.1 权威值）
+ *                     否则 1 - accuracyRate（准确率越低薄弱度越高）
+ *                     再否则按 weaknessLevel 估算：HIGH=0.75, MEDIUM=0.5, LOW=0.25
+ */
+export async function getWeakPoints(userId) {
+  try {
+    const res = unwrap(await get(`/api/weak-points?userId=${userId}&status=ACTIVE`));
+    const list = Array.isArray(res) ? res : [];
+    return list
+      .map((wp) => ({
+        kpId: wp.id,
+        kpName: wp.knowledgePoint || '',
+        weaknessScore: wp.weaknessScore != null
+          ? Math.round(parseFloat(wp.weaknessScore) * 100) / 100
+          : wp.accuracyRate != null
+            ? Math.round((1 - parseFloat(wp.accuracyRate)) * 100) / 100
+            : { HIGH: 0.75, MEDIUM: 0.50, LOW: 0.25 }[wp.weaknessLevel] ?? 0.30,
+        subject: wp.subject || '',
+      }))
+      .sort((a, b) => b.weaknessScore - a.weaknessScore); // 最薄弱排最前
+  } catch (err) {
+    console.warn('获取薄弱知识点失败，返回空列表:', err);
+    return [];
+  }
+}
+
+// ─── 1. 文件解析 ───────────────────────────────────
+
+/**
+ * 上传文件并解析内容
+ * POST /api/teaching/{courseId}/upload (multipart/form-data)
+ *
+ * 后端：TeachingController.uploadFile → ApiResponse<FileUploadResponse>
+ * FileUploadResponse: { filePath, fileName, fileSize, fileType }
+ *
+ * @param {File} file - 上传的文件
+ * @param {string} courseId - 课程 ID（讲课后端路径参数）
+ * @returns {Promise<Object>} { filePath, fileName, fileSize, fileType }
+ */
+export async function parseLectureFile(file, courseId) {
+  if (USE_MOCK) {
+    // 模拟网络延迟
+    await new Promise(r => setTimeout(r, 1500));
+    return { ...mockParseResult };
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  return request(`/api/teaching/${courseId}/upload`, {
+    method: 'POST',
+    body: formData,
+    headers: {}, // 让浏览器自动设置 Content-Type: multipart/form-data
+  });
+}
+
+// ─── 2. 讲课生成（SSE 流式） ───────────────────────
+
+/**
+ * 生成讲课内容（SSE 流式）
+ * POST /api/teaching/{courseId}/stream-generate → SSE
+ *
+ * 后端：TeachingController.streamGenerateTeachingContent
+ * 请求体: { course_id, source_text, user_profile }
+ * SSE 事件: outline / slide / done（见 M4_前端对接清单.md §三）
+ *
+ * @param {Object} params
+ * @param {string} params.courseId - 课程 ID（讲课后端路径参数）
+ * @param {string} [params.sourceText] - 文本内容
+ * @param {string} [params.sourceType] - file | text | from_weakpoint
+ * @param {Object} [params.userProfile] - 用户画像（可省略）
+ * @param {function} onEvent           - 回调: ({ type, ...data }) => void
+ * @returns {Promise<Object>} 最终结果 { lectureId, totalPages, slides }
+ */
+export async function generateLecture(params, onEvent) {
+  if (USE_MOCK) {
+    // 逐个发送事件
+    let lastDelay = 0;
+    for (const event of mockGenerationEvents) {
+      const wait = Math.max(200, event.delay - lastDelay);
+      await new Promise(r => setTimeout(r, wait));
+      lastDelay = event.delay;
+      onEvent(event);
+    }
+
+    return {
+      lectureId: mockPPTStructure.lectureId,
+      totalPages: mockPPTStructure.totalPages,
+      slides: mockPPTStructure.slides,
+    };
+  }
+
+  const { courseId, sourceText = '', userProfile } = params || {};
+  const response = await fetch(`/api/teaching/${courseId}/stream-generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      course_id: courseId,
+      source_text: sourceText,
+      user_profile: userProfile || {},
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`生成请求失败: HTTP ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let result = {};
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        try {
+          const data = JSON.parse(line.slice(6));
+          onEvent(data);
+          if (data.type === 'done') result = data;
+        } catch { /* ignore parse errors */ }
+      }
+    }
+  }
+
+  return result;
+}
+
+// ─── 2.5 创建讲课内容 ──────────────────────────────
+
+/**
+ * 创建讲课内容
+ * POST /api/teaching/create
+ *
+ * 后端：TeachingController.createLecture → ApiResponse<LectureVO>
+ * LectureVO: { id, courseId, title, status, ... }
+ *
+ * @param {Object} opts
+ * @param {string} opts.courseId - 课程 ID
+ * @param {string} opts.title - 讲课标题
+ * @returns {Promise<Object>} LectureVO
+ */
+export async function createLecture(opts) {
+  const { courseId, title } = opts || {};
+  return request('/api/teaching/create', {
+    method: 'POST',
+    body: JSON.stringify({ courseId, title }),
+  });
+}
+
+// ─── 3. 讲课内容管理 ───────────────────────────────
+
+/**
+ * 获取讲课内容列表
+ * 后端 Java：GET /api/lesson-prep/contents?userId=
+ */
+export async function getLectureList(userId) {
+  if (USE_MOCK) {
+    await new Promise(r => setTimeout(r, 500));
+    return { total: mockHistoryList.length, items: mockHistoryList };
+  }
+  // 后端 Java：GET /api/lesson-prep/contents?userId= &status=
+  // 返回 ApiResponse<List<TeachingContentVO>>
+  const res = unwrap(await get(`/api/lesson-prep/contents?userId=${userId}`));
+  const list = Array.isArray(res) ? res : res?.list || [];
+  return { total: list.length, items: list.map(toLectureItem) };
+}
+
+/**
+ * 获取讲课内容详情（含完整 PPT 结构）
+ * 后端 Java：GET /api/lesson-prep/contents/{prepId}
+ */
+export async function getLectureDetail(lectureId) {
+  if (USE_MOCK) {
+    await new Promise(r => setTimeout(r, 300));
+    const item = mockHistoryList.find(l => l.lectureId === lectureId);
+    return item
+      ? { ...item, pptStructure: mockPPTStructure }
+      : null;
+  }
+  const vo = unwrap(await get(`/api/lesson-prep/contents/${lectureId}`));
+  return vo ? { ...toLectureItem(vo), pptStructure: vo.pptStructure } : null;
+}
+
+/**
+ * 删除讲课内容
+ * 后端 Java：DELETE /api/lesson-prep/contents/{prepId}
+ */
+export async function deleteLecture(lectureId) {
+  if (USE_MOCK) {
+    await new Promise(r => setTimeout(r, 300));
+    const idx = mockHistoryList.findIndex(l => l.lectureId === lectureId);
+    if (idx !== -1) mockHistoryList.splice(idx, 1);
+    return { success: true };
+  }
+  return request(`/api/lesson-prep/contents/${lectureId}`, { method: 'DELETE' });
+}
+
+/**
+ * 发布讲课内容
+ * 后端 Java：PUT /api/lesson-prep/contents/{prepId}（status → published）
+ */
+export async function publishLecture(lectureId) {
+  if (USE_MOCK) {
+    await new Promise(r => setTimeout(r, 300));
+    return { success: true };
+  }
+  return request(`/api/lesson-prep/contents/${lectureId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ status: 'published' }),
+  });
+}
+
+// ─── 4. M6 画像引擎事件上报 ─────────────────────────
+
+/**
+ * 向 M6 画像引擎提交讲课交互事件
+ * POST /api/events/collect
+ *
+ * 对接文档: M6-v1-通知-M4组.md (2026-08-05 张伟涛)
+ *
+ * @param {Object} params
+ * @param {string} params.lectureId  - 课堂ID (必填, 1-64字符, 字母或数字开头)
+ * @param {string} params.chapterId  - 章节ID (必填, 格式同 lectureId)
+ * @param {'pause'|'resume'|'replay'|'ask'|'complete'} params.action - 交互动作
+ * @param {string} [params.sessionId]  - 会话ID (可选, 不传则省略)
+ * @param {string} [params.kpId]       - 知识点ID (可选, 不传则省略)
+ * @param {string} [params.traceId]    - 链路追踪ID (可选, 不传则省略)
+ * @returns {Promise<void>}
+ */
+export async function submitLectureEvent({
+  lectureId,
+  chapterId,
+  action,
+  sessionId,
+  kpId,
+  traceId,
+}) {
+  // 构造符合 M6 规范的事件体
+  const body = {
+    type: 'lecture_interact',
+    sourceModule: 'M4',
+    data: {
+      lectureId,
+      chapterId,
+      action,
+    },
+    occurredAt: new Date().toISOString().replace('Z', '+08:00'),
+  };
+
+  // 可选字段：为 null/undefined 时省略（M6 不接受显式 null）
+  if (sessionId != null) body.sessionId = sessionId;
+  if (kpId != null) body.kpId = String(kpId);
+  if (traceId != null) body.traceId = traceId;
+
+  try {
+    await request('/api/events/collect', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    // M6 事件上报失败不影响主流程，静默处理
+    console.warn('[M4][M6] 事件上报失败:', action, err);
+  }
+}
