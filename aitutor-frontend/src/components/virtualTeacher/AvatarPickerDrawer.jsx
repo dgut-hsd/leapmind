@@ -79,7 +79,7 @@ const AvatarPickerDrawer = ({ open, currentAvatar, onClose, onSaved }) => {
             type="button"
             onClick={onClose}
             aria-label="关闭"
-            className="grid h-9 w-9 place-items-center rounded-full border border-white/15 bg-white/10 transition hover:bg-white/20"
+            className="grid h-9 w-9 place-items-center rounded-full border border-white/15 bg-white/10 transition hover:bg-white/20 motion-reduce:transition-none motion-reduce:hover:bg-white/10"
           >
             <X size={17} />
           </button>
@@ -95,10 +95,10 @@ const AvatarPickerDrawer = ({ open, currentAvatar, onClose, onSaved }) => {
                 type="button"
                 onClick={() => setSelectedId(avatar.id)}
                 aria-pressed={selectedNow}
-                className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${
+                className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition motion-reduce:transition-none ${
                   selectedNow
                     ? 'border-cyan-300 bg-cyan-300/15'
-                    : 'border-white/10 bg-white/[.06] hover:bg-white/12'
+                    : 'border-white/10 bg-white/[.06] hover:bg-white/12 motion-reduce:hover:bg-white/[.06]'
                 }`}
               >
                 <span
@@ -141,7 +141,7 @@ const AvatarPickerDrawer = ({ open, currentAvatar, onClose, onSaved }) => {
             type="button"
             onClick={handleSave}
             disabled={!selected || saveState === 'saving'}
-            className="w-full rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-500 px-5 py-3.5 font-black text-indigo-950 shadow-xl transition hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-60"
+            className="w-full rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-500 px-5 py-3.5 font-black text-indigo-950 shadow-xl transition hover:-translate-y-0.5 motion-reduce:transition-none motion-reduce:hover:translate-y-0 disabled:cursor-wait disabled:opacity-60"
           >
             {saveState === 'saving' ? '正在保存…' : currentAvatar?.id === selected?.id ? '已设为我的虚拟教师' : '使用这个形象'}
           </button>

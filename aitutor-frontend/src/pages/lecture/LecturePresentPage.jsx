@@ -259,9 +259,17 @@ const LecturePresentPage = ({ lectureData, userId = 1, onBack, onFinish }) => {
   const handleOpenAvatarPicker = useCallback(() => setAvatarPickerOpen(true), []);
   const handleAvatarSaved = useCallback((avatar) => {
     setSelectedAvatar(avatar);
-    // A5: 换形象更新 adapter 未来流式音色；不 bindSlide / 不递增代际 / 不停止当前音频
-    try { adapter?.setVoiceType(avatar?.voiceType); } catch (_) {}
+    // A5: 换形象更新 adapter 未来流式音色；不 bindSlide / 不递增代际 / 不停止当前音频。
+    // （统一同步规则见下方 useEffect —— 此处依赖 effect 即可，保留显式调用为防御。）
+    try { adapter?.setVoiceType(avatar?.voiceType || 'default'); } catch (_) {}
   }, [adapter]);
+
+  // POST-CHECKPOINT V1: 已保存 preference 异步到达后同样同步 adapter 音色。
+  // 覆盖初始加载（selectedAvatar 从 null → pref）与 Drawer 后续变化两条路径，
+  // 同一同步规则，且不 bindSlide / 不递增代际 / 不停止当前音频。
+  useEffect(() => {
+    try { adapter?.setVoiceType(selectedAvatar?.voiceType || 'default'); } catch (_) {}
+  }, [adapter, selectedAvatar?.voiceType]);
   const handleViewerReady = useCallback((model) => {
     modelRef.current = model;
   }, []);

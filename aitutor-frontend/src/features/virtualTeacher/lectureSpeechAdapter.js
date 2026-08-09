@@ -204,13 +204,17 @@ export class LectureSpeechAdapter {
     // ── 步骤 1：探测预生成音频（不臆断"远程=有音频"） ──
     this.setState(SPEECH_STATE.PREPARING);
     let hasPregenerated = Boolean(slide.hasPregeneratedAudio);
+    let resolvedSegments = null; // POST-CHECKPOINT S1: 保留探测结果，避免二次 fetch
     if (!hasPregenerated && typeof this.fetchSegments === 'function' && slide.courseId) {
       try {
         const segments = await this.fetchSegments(slide.courseId, slide.pageNumber);
         if (gen !== this.generation) return; // 探测期间翻页：作废
-        if (Array.isArray(segments) && segments.length > 0) hasPregenerated = true;
+        if (Array.isArray(segments) && segments.length > 0) {
+          hasPregenerated = true;
+          resolvedSegments = segments; // 复用：playback 不再发起第二次网络请求
+        }
       } catch (_) {
-        // 探测失败视为无预生成音频，继续回退
+        // 探测失败视为无预生成音频，继续回退（S5）
       }
     }
 
@@ -225,7 +229,8 @@ export class LectureSpeechAdapter {
 
     try {
       if (source === SPEECH_SOURCE.PREGENERATED_AUDIO) {
-        await this.playPregenerated(gen, slide);
+        // POST-CHECKPOINT S1: 将已探测 segments 直接传入播放，保证一次 start 至多一次 fetch
+        await this.playPregenerated(gen, slide, resolvedSegments);
       } else {
         await this.playStreaming(gen, slide, narrationText);
       }
@@ -236,9 +241,12 @@ export class LectureSpeechAdapter {
     }
   }
 
-  /** 预生成路径：逐段播放；3D 模型缺失时走音频兜底。 */
-  async playPregenerated(gen, slide) {
-    let segments = slide.pregeneratedSegments;
+  /** 预生成路径：逐段播放；3D 模型缺失时走音频兜底。segments 优先用探测结果（不重复 fetch）。 */
+  async playPregenerated(gen, slide, probedSegments = null) {
+    let segments = probedSegments;
+    if (!Array.isArray(segments) && Array.isArray(slide.pregeneratedSegments)) {
+      segments = slide.pregeneratedSegments;
+    }
     if (!Array.isArray(segments) && typeof this.fetchSegments === 'function') {
       segments = await this.fetchSegments(slide.courseId, slide.pageNumber);
     }

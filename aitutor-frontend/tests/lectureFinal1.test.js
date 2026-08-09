@@ -273,8 +273,12 @@ describe('A5 setVoiceType 接线', () => {
   });
 });
 
-// ── A6: reduced motion（状态驱动，非 ref） ─────────────────────
-describe('A6 prefers-reduced-motion 驱动', () => {
+// ── A6: reduced motion 说明 ──────────────────────────────────
+// reduced-motion 的落实为 Tailwind `motion-reduce:*` 变体（VirtualTeacherDock /
+// AvatarPickerDrawer 源码审计，无需运行时断言）。
+// 下方仅保留 extractNarrationText 纯函数测试（音频回退文本归一），
+// 不再将其标记为 reduced-motion 覆盖。
+describe('narration 文本归一（回退用）', () => {
   test('extractNarrationText 正确归一 HTML（供回退使用）', () => {
     expect(extractNarrationText({ html_content: '<p>你好&nbsp;<b>世界</b></p>' })).toBe('你好 世界');
     expect(extractNarrationText({ title: '纯标题' })).toBe('纯标题');

@@ -64,7 +64,7 @@ const VirtualTeacherDock = ({
         <button
           type="button"
           onClick={onToggleHidden}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold transition hover:bg-white/20"
+          className="inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold transition hover:bg-white/20 motion-reduce:transition-none motion-reduce:hover:bg-white/10"
         >
           <Eye size={14} /> 显示教师
         </button>
