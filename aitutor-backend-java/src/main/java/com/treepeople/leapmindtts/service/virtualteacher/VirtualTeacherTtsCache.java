@@ -3,6 +3,7 @@ package com.treepeople.leapmindtts.service.virtualteacher;
 import com.treepeople.leapmindtts.config.VirtualTeacherProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -33,6 +34,7 @@ public class VirtualTeacherTtsCache {
     /** 包内测试 seam：cleanupExpired 在删除每个过期条目前调用，供并发回归测试注入同步点。 */
     volatile Runnable cleanupBeforeRemoveProbe;
 
+    @Autowired
     public VirtualTeacherTtsCache(
             ObjectProvider<StringRedisTemplate> redisProvider,
             VirtualTeacherProperties properties) {

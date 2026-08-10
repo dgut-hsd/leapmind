@@ -4,6 +4,7 @@ import com.treepeople.leapmindtts.config.VirtualTeacherProperties;
 import com.treepeople.leapmindtts.exception.TooManyRequestsException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
@@ -58,6 +59,7 @@ public class VirtualTeacherUsageLimiter {
                             + "return current",
                     Long.class);
 
+    @Autowired
     public VirtualTeacherUsageLimiter(
             ObjectProvider<StringRedisTemplate> redisProvider,
             VirtualTeacherProperties properties) {
