@@ -8,8 +8,8 @@
 --     question_kp_relations — 题目-知识点关联
 --     user_answers      — 答题记录
 --     wrong_question_book — 错题本
---     conversation_messages — 对话记录
---     user_profiles     — 用户画像
+--   （conversation_messages 见 V12__add_conversation_tables.sql，
+--     user_profiles 见 V20__create_m6_user_profiles.sql，避免重复建表）
 --   此前这些表仅存在于 Python sql/init.sql 中，Java Flyway 未创建，
 --   导致 Python 引擎直连数据库时无法读取数据。
 --
@@ -123,56 +123,19 @@ CREATE TABLE wrong_question_book (
     CONSTRAINT fk_wqb_answer FOREIGN KEY (answer_record_id) REFERENCES user_answers(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='错题本表';
 
--- -----------------------------------------------
--- 6. 对话消息表（M7 写入，M3+Python 读取分析）
--- -----------------------------------------------
-CREATE TABLE conversation_messages (
-    id              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '消息ID',
-    user_id         BIGINT       NOT NULL COMMENT '用户ID',
-    session_id      BIGINT       DEFAULT NULL COMMENT '会话ID',
-    kp_id           BIGINT       DEFAULT NULL COMMENT '关联知识点ID（可为空，需AI标注）',
-    role            VARCHAR(20)  NOT NULL COMMENT '角色：user/assistant/system',
-    content         TEXT         NOT NULL COMMENT '消息内容',
-    message_type    VARCHAR(30)  DEFAULT 'text' COMMENT '消息类型：text/image/voice/action',
-    metadata_json   TEXT         DEFAULT NULL COMMENT '附加信息JSON：token消耗、响应耗时等',
-    created_at      DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT '消息时间',
-    PRIMARY KEY (id),
-    INDEX idx_user_time (user_id, created_at),
-    INDEX idx_session_time (session_id, created_at),
-    INDEX idx_user_kp (user_id, kp_id),
-    CONSTRAINT fk_cm_user FOREIGN KEY (user_id) REFERENCES users(id),
-    CONSTRAINT fk_cm_kp FOREIGN KEY (kp_id) REFERENCES knowledge_points(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='对话消息表';
-
--- -----------------------------------------------
--- 7. 用户画像表（M6 写入，M2/M3/M4/M5/M7 消费）
--- -----------------------------------------------
-CREATE TABLE user_profiles (
-    id                      BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-    user_id                 BIGINT       NOT NULL COMMENT '用户ID',
-    strengths_json          TEXT         DEFAULT NULL COMMENT '擅长知识点列表 JSON: [{"kp_id":1,"level":0.85},...]',
-    weakness_json           TEXT         DEFAULT NULL COMMENT '薄弱知识点列表 JSON',
-    learning_style          VARCHAR(50)  DEFAULT NULL COMMENT '学习风格：visual/auditory/reading/kinesthetic',
-    confusion_history_json  TEXT         DEFAULT NULL COMMENT '历史困惑点记录 JSON',
-    avg_accuracy            DECIMAL(5,2) DEFAULT NULL COMMENT '平均正确率',
-    total_questions         INT          DEFAULT NULL COMMENT '总做题数',
-    updated_at              DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    PRIMARY KEY (id),
-    UNIQUE KEY uk_user (user_id),
-    CONSTRAINT fk_up_user FOREIGN KEY (user_id) REFERENCES users(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户画像表';
-
 -- ===============================================
 -- 种子数据：数学知识点树（与 Python sql/init.sql 一致）
 -- ===============================================
-INSERT INTO knowledge_points (id, name, parent_id, subject, level) VALUES
-(1,  '几何',              NULL, 'math', 1),
-(2,  '代数',              NULL, 'math', 1),
-(10, '勾股定理',           1,    'math', 2),
-(11, '相似三角形',         1,    'math', 2),
-(12, '全等三角形',         1,    'math', 2),
-(20, '一元二次方程',       2,    'math', 2),
-(21, '二次函数',           2,    'math', 2),
-(101,'勾股定理逆定理',     10,   'math', 3),
-(102,'勾股数',             10,   'math', 3),
-(103,'勾股定理应用',       10,   'math', 3);
+-- 注意：knowledge_points.grade 为 NOT NULL，种子必须显式提供 grade，
+-- 否则 MySQL 严格模式下报 "Field 'grade' doesn't have a default value"。
+INSERT INTO knowledge_points (id, name, parent_id, subject, grade, level) VALUES
+(1,  '几何',              NULL, 'math', 'grade_7', 1),
+(2,  '代数',              NULL, 'math', 'grade_7', 1),
+(10, '勾股定理',           1,    'math', 'grade_8', 2),
+(11, '相似三角形',         1,    'math', 'grade_8', 2),
+(12, '全等三角形',         1,    'math', 'grade_8', 2),
+(20, '一元二次方程',       2,    'math', 'grade_9', 2),
+(21, '二次函数',           2,    'math', 'grade_9', 2),
+(101,'勾股定理逆定理',     10,   'math', 'grade_8', 3),
+(102,'勾股数',             10,   'math', 'grade_8', 3),
+(103,'勾股定理应用',       10,   'math', 'grade_8', 3);
