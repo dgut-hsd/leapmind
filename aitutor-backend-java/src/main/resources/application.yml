@@ -70,7 +70,7 @@ tts:
   app:
     key: 1NKi3NqL8jyXC8PK
   voice: zhixiaoxia # 发音人配置（作为 M8 音色默认值兜底）
-  api-url: http://localhost:8080/api/virtual-teacher/tts
+ # api-url: http://localhost:8080/api/virtual-teacher/tts
 m8:
   # M8 服务部署地址（不要带 /api 路径；如果 M8 和 M5 在同一个 Spring Boot 应用部署，
   # 就填 M5 自己的 server.port 地址，当前项目 application.yml 顶部 server.port=8080，

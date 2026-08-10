@@ -59,7 +59,7 @@ public class WebClientConfig {
         return webClientBuilder.build();
     }
 
-    @Bean
+   /*  @Bean
     @Qualifier("contextCompressWebClient")
     public WebClient contextCompressWebClient() {
         // As per user spec: connect 2s, response 10s. The total timeout is controlled by .timeout() in the service.
@@ -73,7 +73,7 @@ public class WebClientConfig {
         return WebClient.builder()
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .build();
-    }
+    } */
 
     /**
      * 上下文压缩专用 WebClient（连接 2s，响应 10s）。
