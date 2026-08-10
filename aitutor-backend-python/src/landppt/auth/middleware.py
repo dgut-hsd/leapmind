@@ -41,6 +41,7 @@ class AuthMiddleware:
             "/api/image/view/",  # 图床图片访问无需认证
             "/api/image/thumbnail/",  # 图片缩略图访问无需认证
             "/api/internal/",  # [跨端联桥] Java→Python 内部通信接口，服务间调用不走用户态鉴权
+            "/api/ai/",  # M4 Java→Python 讲课生成接口，服务间调用不走浏览器会话鉴权
             "/docs",
             "/redoc",
             "/openapi.json"
