@@ -14,6 +14,7 @@ public class VirtualTeacherProperties {
     private Duration synthesisTimeout = Duration.ofSeconds(125);
     private RateLimit rateLimit = new RateLimit();
     private Storage storage = new Storage();
+    private Streaming streaming = new Streaming();
 
     @Data
     public static class RateLimit {
@@ -31,5 +32,15 @@ public class VirtualTeacherProperties {
         private String accessKey = "minioadmin";
         private String secretKey = "minioadmin";
         private String bucket = "leapmind-tts";
+    }
+
+    @Data
+    public static class Streaming {
+        /** 有界 PCM 回调队列容量（内存安全限制，非吞吐 SLA）。 */
+        private int queueCapacity = 64;
+        /** PCM 累积内存安全预算（字节）。默认 = 合成超时(125s) × 32000 B/s。 */
+        private long maxPcmBytes = 4_000_000L;
+        /** 单段最大字符数（经典短文本 SpeechSynthesizer 限制 ~300，留余量取 290）。 */
+        private int segmentMaxChars = 290;
     }
 }

@@ -158,23 +158,27 @@ export default function KnowledgePointDetailPage({ knowledgePointId, onBack, onH
 
           <section className="grid gap-6 lg:grid-cols-5">
             <article className="rounded-3xl border border-purple-400/30 bg-gradient-to-b from-purple-900/40 to-purple-800/20 p-5 shadow-2xl backdrop-blur-lg sm:p-6 lg:col-span-3"><h3 className="text-xl font-bold">掌握度变化</h3><p className="mt-1 text-sm text-purple-100/55">基于近期答题、讲题反馈和复习结果</p><div className="mt-4"><TrendChart history={detail.history} /></div></article>
-            <article className="rounded-3xl border border-purple-400/30 bg-[#4210A5]/60 p-5 shadow-xl backdrop-blur-lg sm:p-6 lg:col-span-2"><h3 className="text-xl font-bold">前置知识</h3><p className="mt-1 text-sm text-purple-100/55">建议先确保这些内容掌握稳定</p><div className="mt-5 space-y-3">{(detail.prerequisites || []).map((item) => <div key={item.id || item.name} className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.06] p-4"><span className="font-medium">{item.name}</span><span className="text-sm font-semibold" style={{ color: colorForMastery(item.mastery) }}>{item.mastery}%</span></div>)}</div></article>
+            <article className="rounded-3xl border border-purple-400/30 bg-[#4210A5]/60 p-5 shadow-xl backdrop-blur-lg sm:p-6 lg:col-span-2"><h3 className="text-xl font-bold">前置知识</h3><p className="mt-1 text-sm text-purple-100/55">建议先确保这些内容掌握稳定</p><div className="mt-5 space-y-3">{(detail.prerequisites || []).length === 0 ? <div className="rounded-2xl bg-black/10 p-5 text-center text-sm text-white/45">暂无前置知识数据</div> : (detail.prerequisites || []).map((item) => <div key={item.id || item.name} className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.06] p-4"><span className="font-medium">{item.name}</span><span className="text-sm font-semibold" style={{ color: colorForMastery(item.mastery) }}>{item.mastery}%</span></div>)}</div></article>
           </section>
 
           <section className="grid gap-6 lg:grid-cols-2">
             <article className="rounded-3xl border border-purple-400/30 bg-[#4210A5]/60 p-5 shadow-xl backdrop-blur-lg sm:p-6">
               <div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-violet-300/15"><BookMarked className="h-5 w-5 text-violet-100" /></div><div><h3 className="text-xl font-bold">复习计划</h3><p className="text-sm text-white/45">按遗忘曲线安排</p></div></div>
               <div className="mt-6 space-y-3">
-                {(detail.reviewPlan || []).map((step, index) => {
+                {(detail.reviewPlan || []).length === 0 ? (
+                  <div className="rounded-2xl bg-black/10 p-5 text-center text-sm text-white/45">暂无复习计划</div>
+                ) : (
+                (detail.reviewPlan || []).map((step, index) => {
                   const completed = step.completed || step.status === 'completed'
                   const description = step.description || `${step.durationMinutes || 15}分钟 · ${step.type === 'quiz' ? '掌握度测验' : step.type === 'exercise' ? '针对性练习' : '知识回顾'}`
                   return <div key={step.id || `${step.title}-${index}`} className="flex gap-4 rounded-2xl border border-white/10 bg-white/[0.06] p-4"><div className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm font-bold ${completed ? 'bg-emerald-300 text-emerald-950' : 'bg-[#A286FF]/25 text-white/80'}`}>{completed ? '✓' : index + 1}</div><div><div className="font-semibold">{step.title}</div><div className="mt-1 text-sm text-white/55">{description}</div><div className="mt-2 text-xs text-purple-200/70">{step.dateLabel || step.date}</div></div></div>
-                })}
+                })
+                )}
               </div>
             </article>
             <article className="rounded-3xl border border-purple-400/30 bg-[#4210A5]/60 p-5 shadow-xl backdrop-blur-lg sm:p-6">
               <div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-cyan-300/15"><Dumbbell className="h-5 w-5 text-cyan-100" /></div><div><h3 className="text-xl font-bold">推荐练习</h3><p className="text-sm text-white/45">由易到难巩固知识点</p></div></div>
-              <div className="mt-6 space-y-3">{(detail.recommendedExercises || []).map((exercise, index) => <div key={exercise.id || exercise.title} className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.06] p-4 shadow-md transition hover:-translate-y-0.5 hover:border-purple-200/35 hover:bg-white/10"><div><div className="font-semibold">{exercise.title}</div><div className="mt-1 text-sm text-white/55">{exercise.questionCount ? `${exercise.questionCount}题 · ` : ''}约{exercise.estimatedMinutes}分钟</div></div><span className={`rounded-full px-3 py-1 text-xs ${index === 0 ? 'bg-emerald-300/15 text-emerald-100' : index === 1 ? 'bg-amber-300/15 text-amber-100' : 'bg-rose-300/15 text-rose-100'}`}>{difficultyText[exercise.difficulty] || exercise.difficulty}</span></div>)}</div>
+              <div className="mt-6 space-y-3">{(detail.recommendedExercises || []).length === 0 ? <div className="rounded-2xl bg-black/10 p-5 text-center text-sm text-white/45">暂无推荐练习</div> : (detail.recommendedExercises || []).map((exercise, index) => <div key={exercise.id || exercise.title} className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.06] p-4 shadow-md transition hover:-translate-y-0.5 hover:border-purple-200/35 hover:bg-white/10"><div><div className="font-semibold">{exercise.title}</div><div className="mt-1 text-sm text-white/55">{exercise.questionCount ? `${exercise.questionCount}题 · ` : ''}约{exercise.estimatedMinutes}分钟</div></div><span className={`rounded-full px-3 py-1 text-xs ${index === 0 ? 'bg-emerald-300/15 text-emerald-100' : index === 1 ? 'bg-amber-300/15 text-amber-100' : 'bg-rose-300/15 text-rose-100'}`}>{difficultyText[exercise.difficulty] || exercise.difficulty}</span></div>)}</div>
             </article>
           </section>
         </div>

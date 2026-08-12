@@ -14,7 +14,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.CacheControl;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -91,26 +90,19 @@ public class VirtualTeacherController {
         return ApiResponse.success(ttsService.synthesize(requireUserId(httpRequest), request).response(), "语音合成完成");
     }
 
-    @PostMapping(value = "/tts/stream", produces = "audio/wav")
+    @PostMapping(value = "/tts/stream")
     public ResponseEntity<StreamingResponseBody> synthesizeStream(
             HttpServletRequest httpRequest,
             @Valid @RequestBody VirtualTeacherTtsRequest request) {
-        VirtualTeacherTtsService.SynthesisResult result = ttsService.synthesize(requireUserId(httpRequest), request);
-        StreamingResponseBody body = output -> {
-            byte[] audio = result.audio();
-            int offset = 0;
-            int chunkSize = 8192;
-            while (offset < audio.length) {
-                int length = Math.min(chunkSize, audio.length - offset);
-                output.write(audio, offset, length);
-                output.flush();
-                offset += length;
-            }
-        };
+        Long userId = requireUserId(httpRequest);
+        VirtualTeacherTtsService.StreamingPlan plan = ttsService.stream(userId, request);
+        StreamingResponseBody body = output -> ttsService.writeStream(plan, output, userId, request);
         return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(VirtualTeacherTtsService.AUDIO_CONTENT_TYPE))
-                .header("X-TTS-Cache", result.response().isCacheHit() ? "HIT" : "MISS")
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"teacher.wav\"")
+                .contentType(MediaType.parseMediaType("application/octet-stream"))
+                .header("X-Audio-Format", "pcm-s16")
+                .header("X-Audio-Sample-Rate", "16000")
+                .header("X-Audio-Channels", "1")
+                .header("X-Audio-Byte-Order", "little-endian")
                 .body(body);
     }
 

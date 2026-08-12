@@ -14,11 +14,18 @@
  *  - "做配套练习"按钮（跳转 M1 做题）
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import Header from '../../components/common/Header';
 import SlideViewer from '../../components/lecture/SlideViewer';
-import TeacherPanel from '../../components/teacher/TeacherPanel';
 import ChatPanelPlaceholder from '../../components/lecture/ChatPanelPlaceholder';
+import VirtualTeacherDock from '../../components/virtualTeacher/VirtualTeacherDock.jsx';
+import AvatarPickerDrawer from '../../components/virtualTeacher/AvatarPickerDrawer.jsx';
+import { useLectureSpeech } from '../../hooks/useLectureSpeech.js';
+import { LectureSpeechAdapter, SPEECH_STATE } from '../../features/virtualTeacher/lectureSpeechAdapter.js';
+import { StreamingPlayback } from '../../features/virtualTeacher/streamingPlayback.js';
+import { fetchSegments } from '../../features/chat/pptApi.js';
+import { streamVirtualTeacherSpeech, fetchTeacherPreference, DEFAULT_TEACHER_AVATARS } from '../../services/virtualTeacherService.js';
+import { sharedViewer } from '../../features/vrmViewer/viewerContext.js';
 import { Flag, BookOpen, MessageCircle, Monitor, User, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const TABS = [
@@ -178,11 +185,104 @@ const LecturePresentPage = ({ lectureData, userId = 1, onBack, onFinish }) => {
   const [currentSlide, setCurrentSlide] = useState(1);
   const [showEndPanel, setShowEndPanel] = useState(false);
   const [mobileTab, setMobileTab] = useState('slides');
+  const [remoteSlideMeta, setRemoteSlideMeta] = useState(null);
 
-  // 幻灯片切换回调（由 SlideViewer 内部翻页时触发）
-  const handleSlideChange = useCallback((pageNum) => {
-    setCurrentSlide(pageNum);
+  // M8 FINAL: 虚拟教师 UI 状态（与语音生命周期解耦）
+  const [teacherVisible, setTeacherVisible] = useState(true);
+  const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
+  const [selectedAvatar, setSelectedAvatar] = useState(null);
+  const [speechState, setSpeechState] = useState(SPEECH_STATE.IDLE);
+  const modelRef = useRef(null);
+
+  // A1: 单一 viewer 挂载 —— 基于视口断点只挂载一个 VirtualTeacherViewer，
+  // 避免桌面/移动两棵 Dock 树同时创建 WebGL 上下文。state 驱动（非 ref）。
+  const [isDesktop, setIsDesktop] = useState(true);
+  useEffect(() => {
+    const mq = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(min-width: 1024px)')
+      : null;
+    if (!mq) return undefined;
+    setIsDesktop(mq.matches);
+    const onChange = (e) => setIsDesktop(e.matches);
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
   }, []);
+
+  // 加载已保存的教师偏好（后端优先，本地降级；均不可用则使用内置默认形象）
+  useEffect(() => {
+    let active = true;
+    fetchTeacherPreference()
+      .then((pref) => { if (active && pref?.modelUrl) setSelectedAvatar(pref); else if (active) setSelectedAvatar(DEFAULT_TEACHER_AVATARS[0]); })
+      .catch(() => { if (active) setSelectedAvatar(DEFAULT_TEACHER_AVATARS[0]); });
+    return () => { active = false; };
+  }, []);
+
+  // 幻灯片切换回调：接收页码 + 真实 slide 元数据（A3：远程回退需要真实字段）
+  const handleSlideChange = useCallback((pageNum, slideMeta) => {
+    setCurrentSlide(pageNum);
+    if (slideMeta) setRemoteSlideMeta(slideMeta);
+  }, []);
+
+  // B1 + M8 FINAL + FINAL.1: 真实播放生命周期 —— 预生成 / 流式统一由 LectureSpeechAdapter 管辖。
+  // A3: 不臆断"远程 = 有音频"；start() 内部先探测 fetchSegments，再按真实文本回退。
+  const currentSlideDesc = {
+    courseId: courseId || lectureId || '',
+    slideId: hasMockSlides ? String(currentSlide) : (remoteSlideMeta?.slideId || `remote-${currentSlide}`),
+    pageNumber: currentSlide,
+    title: hasMockSlides ? (mockSlides[currentSlide - 1]?.content?.title || '') : (remoteSlideMeta?.title || ''),
+    html_content: hasMockSlides ? '' : (remoteSlideMeta?.html_content || ''),
+    narrationText: hasMockSlides
+      ? mockSlides[currentSlide - 1]?.content?.title || ''
+      : (remoteSlideMeta?.title || ''),
+    // 不设置 hasPregeneratedAudio —— 由 adapter.start() 探测确认
+    voiceType: selectedAvatar?.voiceType,
+  };
+  const speech = useLectureSpeech({
+    createAdapter: () => new LectureSpeechAdapter({
+      getModel: () => modelRef.current || sharedViewer?.model || null,
+      fetchSegments,
+      streamSpeech: streamVirtualTeacherSpeech,
+      createStreamingPlayback: (opts) => new StreamingPlayback(opts),
+      voiceType: selectedAvatar?.voiceType || 'default',
+      onStateChange: (state) => setSpeechState(state),
+      onSubtitle: () => {},
+    }),
+    slide: currentSlideDesc,
+  });
+  const { adapter } = speech;
+
+  const handleStartSpeech = useCallback(() => { void speech.start(); }, [speech]);
+  const handleReplaySpeech = useCallback(() => { void speech.replay(); }, [speech]);
+  const handlePauseSpeech = useCallback(() => { speech.pause(); }, [speech]);
+  const handleResumeSpeech = useCallback(() => { void speech.resume(); }, [speech]);
+  const handleToggleTeacher = useCallback(() => setTeacherVisible((v) => !v), []);
+  const handleOpenAvatarPicker = useCallback(() => setAvatarPickerOpen(true), []);
+  const handleAvatarSaved = useCallback((avatar) => {
+    setSelectedAvatar(avatar);
+    // A5: 换形象更新 adapter 未来流式音色；不 bindSlide / 不递增代际 / 不停止当前音频。
+    // （统一同步规则见下方 useEffect —— 此处依赖 effect 即可，保留显式调用为防御。）
+    try { adapter?.setVoiceType(avatar?.voiceType || 'default'); } catch (_) {}
+  }, [adapter]);
+
+  // POST-CHECKPOINT V1: 已保存 preference 异步到达后同样同步 adapter 音色。
+  // 覆盖初始加载（selectedAvatar 从 null → pref）与 Drawer 后续变化两条路径，
+  // 同一同步规则，且不 bindSlide / 不递增代际 / 不停止当前音频。
+  useEffect(() => {
+    try { adapter?.setVoiceType(selectedAvatar?.voiceType || 'default'); } catch (_) {}
+  }, [adapter, selectedAvatar?.voiceType]);
+  const handleViewerReady = useCallback((model) => {
+    modelRef.current = model;
+  }, []);
+
+  // A7: canonical Play 路由 —— SlideViewer Play 按钮与 Dock 共用同一 adapter 生命周期
+  const handlePlayNarration = useCallback((meta) => {
+    if (meta?.pageNumber && meta.pageNumber !== currentSlide) {
+      setCurrentSlide(meta.pageNumber);
+      setRemoteSlideMeta(meta);
+    }
+    void speech.start();
+  }, [speech, currentSlide]);
+  const canPause = Boolean(adapter?.canPause());
 
   // mock 模式下的翻页 handler
   const handleMockPrev = useCallback(() => {
@@ -244,13 +344,32 @@ const LecturePresentPage = ({ lectureData, userId = 1, onBack, onFinish }) => {
           <MockSlideViewer slides={mockSlides} currentIndex={currentSlide - 1} onPrev={handleMockPrev} onNext={handleMockNext} onSlideChange={handleSlideChange} />
         ) : (
           <div className="flex-1 overflow-hidden">
-            <SlideViewer courseId={courseId || lectureId} projectId={lectureId} onSlideChange={handleSlideChange} />
+            <SlideViewer
+              courseId={courseId || lectureId}
+              projectId={lectureId}
+              onSlideChange={handleSlideChange}
+              onPlayNarration={handlePlayNarration}
+            />
           </div>
         )}
       </div>
 
-      {/* 右侧：追问对话面板 (25%) - 含输入框 */}
-      <div className="hidden lg:flex lg:w-[25%] flex-col p-3 gap-3">
+      {/* 右侧：虚拟教师 (25%) —— 教师为辅，PPT 为主（A1: 仅桌面挂载一个 viewer，条件渲染而非 CSS 隐藏） */}
+      {isDesktop && (
+      <div className="hidden lg:flex lg:w-[25%] flex-col p-3 gap-3 overflow-hidden">
+        <VirtualTeacherDock
+          avatar={selectedAvatar}
+          speechState={speechState}
+          canPause={canPause}
+          hidden={!teacherVisible}
+          onToggleHidden={handleToggleTeacher}
+          onStart={handleStartSpeech}
+          onReplay={handleReplaySpeech}
+          onPause={handlePauseSpeech}
+          onResume={handleResumeSpeech}
+          onOpenSettings={handleOpenAvatarPicker}
+          onViewerReady={handleViewerReady}
+        />
         <div className="flex-1 min-h-0">
           <ChatPanelPlaceholder sceneType="teaching" context={{ lectureId, slide: currentSlide }} userId={userId} />
         </div>
@@ -261,6 +380,7 @@ const LecturePresentPage = ({ lectureData, userId = 1, onBack, onFinish }) => {
           <Flag className="w-4 h-4" />结束讲课
         </button>
       </div>
+      )}
 
       {/* ═══════════════ 移动端：全屏 + 底部 Tab ═══════════════ */}
       {/* 幻灯片视图 */}
@@ -272,7 +392,12 @@ const LecturePresentPage = ({ lectureData, userId = 1, onBack, onFinish }) => {
           <MockSlideViewer slides={mockSlides} currentIndex={currentSlide - 1} onPrev={handleMockPrev} onNext={handleMockNext} onSlideChange={handleSlideChange} />
         ) : (
           <div className="flex-1 overflow-hidden">
-            <SlideViewer courseId={courseId || lectureId} projectId={lectureId} onSlideChange={handleSlideChange} />
+            <SlideViewer
+              courseId={courseId || lectureId}
+              projectId={lectureId}
+              onSlideChange={handleSlideChange}
+              onPlayNarration={handlePlayNarration}
+            />
           </div>
         )}
         {/* 移动端结束按钮（幻灯片页底部） */}
@@ -302,15 +427,29 @@ const LecturePresentPage = ({ lectureData, userId = 1, onBack, onFinish }) => {
         </div>
       </div>
 
-      {/* 教师视图 */}
+      {/* 教师视图（移动端 Tab：老师）— 音频生命周期不随 Tab 切换销毁（A1: 仅移动端挂载一个 viewer） */}
+      {!isDesktop && (
       <div className={`lg:hidden flex-1 flex flex-col ${mobileTab !== 'teacher' ? 'hidden' : ''}`}>
         <div className="bg-white/10 backdrop-blur-md border-b border-white/20 flex-shrink-0">
           <Header lessonSubtitle={title} dark={true} onBack={onBack} />
         </div>
-        <div className="flex-1 overflow-hidden [&>aside]:w-full [&>aside]:h-full">
-          <TeacherPanel dark={true} />
+        <div className="flex-1 overflow-y-auto p-4">
+          <VirtualTeacherDock
+            avatar={selectedAvatar}
+            speechState={speechState}
+            canPause={canPause}
+            hidden={!teacherVisible}
+            onToggleHidden={handleToggleTeacher}
+            onStart={handleStartSpeech}
+            onReplay={handleReplaySpeech}
+            onPause={handlePauseSpeech}
+            onResume={handleResumeSpeech}
+            onOpenSettings={handleOpenAvatarPicker}
+            onViewerReady={handleViewerReady}
+          />
         </div>
       </div>
+      )}
 
       {/* 移动端底部 Tab 栏 */}
       <div className="lg:hidden flex-shrink-0 flex bg-black/30 backdrop-blur-md border-t border-white/10">
@@ -332,6 +471,14 @@ const LecturePresentPage = ({ lectureData, userId = 1, onBack, onFinish }) => {
 
       {/* 讲课结束面板 */}
       {showEndPanel && <EndPanel />}
+
+      {/* 教师形象选择抽屉（讲课页内，不离开讲课页） */}
+      <AvatarPickerDrawer
+        open={avatarPickerOpen}
+        currentAvatar={selectedAvatar}
+        onClose={() => setAvatarPickerOpen(false)}
+        onSaved={handleAvatarSaved}
+      />
     </div>
   );
 };

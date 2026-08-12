@@ -109,6 +109,18 @@
             <artifactId>nls-sdk-transcriber</artifactId>
             <version>2.2.1</version>
         </dependency>
+
+        <!-- 阿里云语音合成SDK（经典 SpeechSynthesizer 流式合成） -->
+        <dependency>
+            <groupId>com.alibaba.nls</groupId>
+            <artifactId>nls-sdk-tts</artifactId>
+            <version>2.2.14</version>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.nls</groupId>
+            <artifactId>nls-sdk-common</artifactId>
+            <version>2.2.14</version>
+        </dependency>
         
         <!-- 阿里云核心SDK -->
         <dependency>
