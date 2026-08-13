@@ -439,6 +439,7 @@ public class ConversationService {
                                 callId, sessionId,
                                 chunk.getInputTokens() != null ? chunk.getInputTokens() : 0,
                                 chunk.getOutputTokens() != null ? chunk.getOutputTokens() : 0)));
+                        publishAskDoubtEvent(sessionId, callId, req, isFollowUp);
                         messageSaved.set(true);
                         fluxSink.complete();
                         return;
