@@ -1,5 +1,7 @@
 package com.treepeople.leapmindtts.service.admin.impl;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.treepeople.leapmindtts.mapper.LessonSessionMapper;
 import com.treepeople.leapmindtts.pojo.entity.LessonSession;
@@ -39,9 +41,15 @@ public class LessonSessionServiceImpl extends ServiceImpl<LessonSessionMapper, L
 
     @Override
     public boolean createSession(String courseId, String title, String originalText, String polishedText) {
+        return createSession(courseId, title, originalText, polishedText, null);
+    }
+
+    @Override
+    public boolean createSession(String courseId, String title, String originalText, String polishedText, Long userId) {
         try {
             LessonSession session = LessonSession.builder()
                     .courseId(courseId)
+                    .userId(userId)
                     .title(title)
                     .originalText(originalText)
                     .polishedText(polishedText)
@@ -53,7 +61,7 @@ public class LessonSessionServiceImpl extends ServiceImpl<LessonSessionMapper, L
 
             boolean result = save(session);
             if (result) {
-                log.info("创建会话成功，会话ID: {}, 标题: {}", courseId, title);
+                log.info("创建会话成功，会话ID: {}, 标题: {}, 用户ID: {}", courseId, title, userId);
             } else {
                 log.error("创建会话失败，会话ID: {}", courseId);
             }
@@ -177,6 +185,20 @@ public class LessonSessionServiceImpl extends ServiceImpl<LessonSessionMapper, L
         } catch (Exception e) {
             log.error("查询指定状态的会话失败，状态: {}", status, e);
             return List.of();
+        }
+    }
+
+    @Override
+    public IPage<LessonSession> getSessionsByStatusPage(String status, long page, long size) {
+        try {
+            // 防御性参数校验：页码最小为 1，每页大小限制在 [1, 100]
+            long safePage = Math.max(page, 1);
+            long safeSize = Math.min(Math.max(size, 1), 100);
+            Page<LessonSession> pageParam = new Page<>(safePage, safeSize);
+            return lessonSessionMapper.selectByStatusPage(pageParam, status);
+        } catch (Exception e) {
+            log.error("分页查询会话失败，状态: {}, 页码: {}, 每页: {}", status, page, size, e);
+            return new Page<>(Math.max(page, 1), Math.min(Math.max(size, 1), 100));
         }
     }
 

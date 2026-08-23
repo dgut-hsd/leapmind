@@ -1,19 +1,36 @@
 # 遗忘曲线复习排期引擎
 # 核心算法：基于艾宾浩斯遗忘曲线（间隔 1→3→7→30 天）
 # 管理 review_schedules 表（排期管理）和 review_reminders 表（前端展示）
+#
+# v2 升级：
+# - 薄弱程度评分增加时间衰减权重（近期错误权重更高）
+# - 增加自适应难度因子（根据复习阶段调整间隔）
+# - 算法版本追踪：review-scheduler-v2
 
+import math
 from datetime import date, datetime, timedelta
 
 from .config import REVIEW_INTERVALS, MAX_STAGE
+
+REVIEW_SCHEDULER_VERSION = "review-scheduler-v2"
+# 时间衰减系数：λ 越大，旧数据衰减越快
+TIME_DECAY_LAMBDA = 0.1
+# 自适应难度因子：高阶段复习间隔倍率
+DIFFICULTY_MULTIPLIER = {0: 1.0, 1: 1.0, 2: 1.5, 3: 2.0}
 
 
 def calc_next_review_delay(stage: int) -> int:
     """
     根据当前复习阶段返回下次复习距今天数
     stage 0→1天, 1→3天, 2→7天, stage≥3→30天（最后间隔）
+
+    v2 升级：高阶段应用自适应难度倍率，延长间隔
     """
     idx = min(stage, len(REVIEW_INTERVALS) - 1)
-    return REVIEW_INTERVALS[idx]
+    baseDelay = REVIEW_INTERVALS[idx]
+    # v2：自适应难度因子
+    multiplier = DIFFICULTY_MULTIPLIER.get(idx, 1.0)
+    return max(1, round(baseDelay * multiplier))
 
 
 def get_next_review_date(stage: int, last_review: date = None) -> date:
@@ -22,20 +39,38 @@ def get_next_review_date(stage: int, last_review: date = None) -> date:
     return base + timedelta(days=calc_next_review_delay(stage))
 
 
-def calc_weakness_score(total: int, correct: int, confused: int) -> float:
+def calc_weakness_score(
+    total: int,
+    correct: int,
+    confused: int,
+    daysSinceLastAttempt: int | None = None,
+) -> float:
     """
     计算知识点薄弱程度分数（0.0~1.0）
     公式：0.4×错误率 + 0.4×(1−正确率) + 0.2×混淆频率
     值越高表示越薄弱
+
+    v2 升级：
+    - 增加时间衰减权重：近期错误权重更高
+    - 衰减因子 = exp(-λ × daysSinceLastAttempt)
+    - 当 daysSinceLastAttempt 为 None 时，使用原始公式（向后兼容）
     """
     if total == 0:
         return 0.0
     error_rate = (total - correct) / total
     recent_correct_rate = correct / total
     confusion_freq = confused / total
-    return round(
-        0.4 * error_rate + 0.4 * (1 - recent_correct_rate) + 0.2 * confusion_freq, 2
-    )
+
+    rawScore = 0.4 * error_rate + 0.4 * (1 - recent_correct_rate) + 0.2 * confusion_freq
+
+    # v2：时间衰减权重
+    if daysSinceLastAttempt is not None and daysSinceLastAttempt > 0:
+        decayFactor = math.exp(-TIME_DECAY_LAMBDA * daysSinceLastAttempt)
+        # 衰减后分数 = 原始分数 × 衰减因子 + (1 - 衰减因子) × 0.5
+        # 即：越久未练习，薄弱程度向 0.5（中性）收敛
+        rawScore = rawScore * decayFactor + (1 - decayFactor) * 0.5
+
+    return round(rawScore, 2)
 
 
 def _derive_priority(weakness_score: float) -> int:

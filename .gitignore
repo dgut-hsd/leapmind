@@ -13,4 +13,22 @@ target/
 
 .claude/
 
+# 临时与探查产物
+tmp/
+tmp_*.blend
+output/
+blend_inspect/
+person_model_inspect/
+campus_dijkstra.exe
+tools/blender-ai-mcp/
+node_modules/
+dist/
+.venv/
+__pycache__/
+*.pyc
+
+# Office 临时文件与个人文档
+~$*
+工作*.docx
+
 

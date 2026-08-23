@@ -4,15 +4,18 @@ import com.treepeople.leapmindtts.mapper.AudioSegmentMapper;
 import com.treepeople.leapmindtts.pojo.dto.*;
 import com.treepeople.leapmindtts.pojo.entity.AudioSegment;
 import com.treepeople.leapmindtts.pojo.entity.LessonSession;
+import com.treepeople.leapmindtts.service.admin.BulkSpeechCache;
 import com.treepeople.leapmindtts.service.admin.BulkSpeechService;
 import com.treepeople.leapmindtts.service.admin.LessonSessionService;
 import com.treepeople.leapmindtts.service.lesson.*;
 import com.treepeople.leapmindtts.util.SegmentIndexingStrategy;
+import com.treepeople.leapmindtts.util.WavMergeUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -57,14 +60,20 @@ public class BulkSpeechServiceImpl implements BulkSpeechService {
     private final PageLevelAudioService pageLevelAudioService;
     private final AIModelService aiModelService;
     private final LessonSessionService lessonSessionService;
+    private final BulkSpeechCache bulkSpeechCache;
 
     @Override
     public BulkSynthesisResponse processBulkSynthesis(BulkSynthesisRequest request) {
-        String courseId = generateCourseId();
+        return processBulkSynthesis(request, null);
+    }
+
+    @Override
+    public BulkSynthesisResponse processBulkSynthesis(BulkSynthesisRequest request, Long userId) {
+        String courseId = (request.getCourseId() != null && !request.getCourseId().isBlank())
+                ? request.getCourseId() : generateCourseId();
         LocalDateTime startTime = LocalDateTime.now();
 
         log.info("开始批量语音合成，会话ID: {}, PPT标题: {}, slides数量: {}", courseId, request.getTitle(), request.getSlides().size());
-
 
         if (voiceDatabaseService == null) {
             log.error("voiceDatabaseService为null，无法继续处理");
@@ -77,20 +86,6 @@ public class BulkSpeechServiceImpl implements BulkSpeechService {
         }
 
         try {
-            // 调试：检查请求数据
-            log.info("请求数据检查:");
-            log.info("- request.getSlides(): {}", request.getSlides() != null ? request.getSlides().size() : "NULL");
-            if (request.getSlides() != null) {
-                for (int i = 0; i < request.getSlides().size(); i++) {
-                    BulkSynthesisRequest.SlideData slide = request.getSlides().get(i);
-                    log.info("  - slide[{}]: pageNumber={}, title={}, contentPoints={}",
-                            i,
-                            slide != null ? slide.getPageNumber() : "NULL",
-                            slide != null ? slide.getTitle() : "NULL",
-                            slide != null && slide.getContentPoints() != null ? slide.getContentPoints().size() : "NULL");
-                }
-            }
-
             // 1. 按页码排序slides，处理null值
             List<BulkSynthesisRequest.SlideData> sortedSlides = request.getSlides().stream()
                     .filter(slide -> slide != null && slide.getPageNumber() != null)
@@ -107,7 +102,7 @@ public class BulkSpeechServiceImpl implements BulkSpeechService {
             // 2. 创建会话
             String originalText = buildOriginalText(sortedSlides);
             boolean sessionCreated = voiceDatabaseService.createCompleteSession(
-                    courseId, request.getTitle(), originalText, null, new ArrayList<>());
+                    courseId, request.getTitle(), originalText, null, new ArrayList<>(), userId);
 
             if (!sessionCreated) {
                 log.error("创建会话失败，会话ID: {}", courseId);
@@ -200,299 +195,6 @@ public class BulkSpeechServiceImpl implements BulkSpeechService {
         return processNormalSlideWithPolishedText(courseId, slide, options);
     }
 
-    /**
-     * 处理单个slide的所有content_points（页面级存储）- 原方法保持兼容
-     */
-    private int processSlide(String courseId, BulkSynthesisRequest.SlideData slide,
-                           BulkSynthesisRequest.BulkSynthesisOptions options) {
-
-        log.info("开始处理页面，会话ID: {}, 页码: {}, 内容点数: {}",
-                courseId, slide.getPageNumber(), slide.getContentPoints().size());
-
-        // 检查是否为目录页面，如果是，使用特殊处理逻辑
-        if (isAgendaOrTitlePage(slide)) {
-            return processAgendaSlide(courseId, slide, options);
-        }
-
-        // 普通页面的处理逻辑
-        return processNormalSlide(courseId, slide, options);
-    }
-
-    /**
-     * 处理目录页面（特殊逻辑：合并所有内容点）
-     */
-    private int processAgendaSlide(String courseId, BulkSynthesisRequest.SlideData slide,
-                                 BulkSynthesisRequest.BulkSynthesisOptions options) {
-
-        log.info("处理目录页面，会话ID: {}, 页码: {}, 内容点数: {}",
-                courseId, slide.getPageNumber(), slide.getContentPoints().size());
-
-        List<PPTAudioSegment> pageAudioSegments = new ArrayList<>();
-
-        // 合并所有内容点为一个字符串
-        String combinedContent = String.join(" ", slide.getContentPoints());
-
-        try {
-            // 1. 文本润色（如果启用）
-            String polishedText = combinedContent;
-            if (options != null && Boolean.TRUE.equals(options.getEnablePolishing())) {
-                try {
-                    // 为目录页面生成专门的润色提示词
-                    String customPrompt = pptContextualPolishing.generatePolishingPrompt(slide, combinedContent, 0);
-
-                    // 目录页面固定200字限制
-                    Integer hardCap = 200;
-
-                    log.info("开始目录页面润色，页码: {}, 原文{}字, 上限{}字",
-                            slide.getPageNumber(), combinedContent.length(), hardCap);
-
-                    polishedText = aiModelService.polishTextWithPrompt(combinedContent, customPrompt, hardCap).block();
-                    if (polishedText == null || polishedText.trim().isEmpty()) {
-                        log.warn("目录页面润色结果为空，使用原文");
-                        polishedText = combinedContent;
-                    } else {
-                        int polishedLength = polishedText.length();
-                        log.info("目录页面润色完成，页码: {}, 原文{}字 -> 润色后{}字",
-                                slide.getPageNumber(), combinedContent.length(), polishedLength);
-                    }
-                } catch (Exception e) {
-                    log.warn("目录页面润色失败，使用原文，页码: {}, 错误: {}",
-                            slide.getPageNumber(), e.getMessage(), e);
-                    polishedText = combinedContent;
-                }
-            }
-
-            // 2. 分句处理
-            List<String> sentences;
-            try {
-                sentences = segmentedSpeechService.splitTextBySentence(polishedText);
-                if (sentences.isEmpty()) {
-                    log.warn("目录页面分句结果为空，页码: {}", slide.getPageNumber());
-                    return 0;
-                }
-                log.debug("目录页面分句完成，页码: {}, 句子数: {}", slide.getPageNumber(), sentences.size());
-            } catch (Exception e) {
-                log.error("目录页面分句处理失败，页码: {}", slide.getPageNumber(), e);
-                return 0;
-            }
-
-            // 3. 处理每个句子
-            for (int sentenceIndex = 0; sentenceIndex < sentences.size(); sentenceIndex++) {
-                String sentence = sentences.get(sentenceIndex);
-
-                try {
-                    // 计算全局片段索引（目录页面使用pointIndex=0）
-                    int globalSegmentIndex = SegmentIndexingStrategy.generateGlobalSegmentIndex(
-                            slide.getPageNumber(), 0, sentenceIndex);
-
-                    // 语音合成
-                    PPTAudioSegment audioSegment = synthesizeAudioSegment(courseId, slide, 0,
-                            globalSegmentIndex, combinedContent, polishedText, sentence, options);
-
-                    if (audioSegment != null && audioSegment.getAudioData() != null && audioSegment.getAudioData().length > 0) {
-                        pageAudioSegments.add(audioSegment);
-                        log.debug("目录页面音频片段合成成功，全局索引: {}, 大小: {} bytes",
-                                globalSegmentIndex, audioSegment.getAudioData().length);
-                    } else {
-                        log.warn("目录页面语音合成失败，句子: {}", sentenceIndex);
-                    }
-                } catch (Exception e) {
-                    log.error("目录页面处理句子失败，句子: {}", sentenceIndex, e);
-                }
-            }
-
-            // 4. 保存页面级音频数据
-            if (!pageAudioSegments.isEmpty()) {
-                try {
-                    String audioFormat = options != null ? options.getAudioFormat() : "wav";
-                    Integer sampleRate = options != null ? options.getSampleRate() : 16000;
-
-                    boolean saved = pageLevelAudioService.savePageAudio(
-                            courseId,
-                            slide.getPageNumber(),
-                            slide.getTitle(),
-                            slide.getSlideType(),
-                            slide.getDescription(),
-                            pageAudioSegments,
-                            audioFormat,
-                            sampleRate
-                    );
-
-                    if (saved) {
-                        log.info("目录页面音频保存成功，页码: {}, 片段数: {}", slide.getPageNumber(), pageAudioSegments.size());
-                    } else {
-                        log.error("目录页面音频保存失败，页码: {}", slide.getPageNumber());
-                    }
-                } catch (Exception e) {
-                    log.error("保存目录页面音频时发生异常，页码: {}", slide.getPageNumber(), e);
-                }
-            }
-
-            return pageAudioSegments.size();
-
-        } catch (Exception e) {
-            log.error("处理目录页面失败，页码: {}", slide.getPageNumber(), e);
-            return 0;
-        }
-    }
-
-    /**
-     * 处理普通页面（原有逻辑）
-     */
-    private int processNormalSlide(String courseId, BulkSynthesisRequest.SlideData slide,
-                                 BulkSynthesisRequest.BulkSynthesisOptions options) {
-
-        List<PPTAudioSegment> pageAudioSegments = new ArrayList<>();
-        int segmentCount = 0;
-        int failedCount = 0;
-
-        for (int pointIndex = 0; pointIndex < slide.getContentPoints().size(); pointIndex++) {
-            String contentPoint = slide.getContentPoints().get(pointIndex);
-
-            try {
-                // 验证内容点
-                if (contentPoint == null || contentPoint.trim().isEmpty()) {
-                    log.warn("跳过空内容点，页码: {}, 内容点索引: {}", slide.getPageNumber(), pointIndex);
-                    continue;
-                }
-
-                // 1. 文本润色（启用）
-                String polishedText = contentPoint;
-                if (options != null && Boolean.TRUE.equals(options.getEnablePolishing())) {
-                    try {
-                        // 根据slide上下文生成定制prompt（含“目录/agenda”等篇幅与风格限制）
-                        String customPrompt = pptContextualPolishing.generatePolishingPrompt(slide, contentPoint, pointIndex);
-
-                        // 计算字数上限：根据页面类型动态调整
-                        int originalLength = contentPoint.length();
-                        Integer hardCap;
-
-                        // 针对特定页面类型应用不同的字数限制策略
-                        if (isAgendaOrTitlePage(slide)) {
-                            // 目录/标题页：严格限制为200字
-                            hardCap = 200;
-                            log.debug("检测到目录/标题页，应用严格字数限制: {}字 (原文{}字)", hardCap, originalLength);
-                        } else {
-                            // 普通页面：原文+200字
-                            hardCap = originalLength + 200;
-                            log.debug("普通页面，应用标准字数限制: {}字 (原文{}字)", hardCap, originalLength);
-                        }
-
-                        log.debug("开始润色，页码: {}, 内容点: {}, 原文{}字, 上限{}字",
-                                slide.getPageNumber(), pointIndex, originalLength, hardCap);
-
-                        // 直接走AIModelService的定制方法（结合上下文prompt + 硬长度上限）
-                        polishedText = aiModelService.polishTextWithPrompt(contentPoint, customPrompt, hardCap).block();
-                        if (polishedText == null || polishedText.trim().isEmpty()) {
-                            log.warn("润色结果为空，使用原文");
-                            polishedText = contentPoint;
-                        } else {
-                            int polishedLength = polishedText.length();
-                            log.info("文本润色完成，页码: {}, 内容点: {}, 原文{}字 -> 润色后{}字 (增加{}字)",
-                                    slide.getPageNumber(), pointIndex, originalLength, polishedLength,
-                                    polishedLength - originalLength);
-
-                            // 验证字数是否超标
-                            if (polishedLength > originalLength + 200) {
-                                log.warn("润色后字数超标，页码: {}, 内容点: {}, 超出{}字，将进行截断",
-                                        slide.getPageNumber(), pointIndex, polishedLength - originalLength - 200);
-                            }
-                        }
-                    } catch (Exception e) {
-                        log.warn("文本润色失败，使用原文，页码: {}, 内容点索引: {}, 错误: {}",
-                                slide.getPageNumber(), pointIndex, e.getMessage(), e);
-                        polishedText = contentPoint;
-                    }
-                }
-
-                // 3. 分句处理
-                List<String> sentences;
-                try {
-                    sentences = segmentedSpeechService.splitTextBySentence(polishedText);
-                    if (sentences.isEmpty()) {
-                        log.warn("分句结果为空，跳过该内容点，页码: {}, 内容点索引: {}",
-                                slide.getPageNumber(), pointIndex);
-                        continue;
-                    }
-                    log.debug("分句完成，页码: {}, 内容点: {}, 句子数: {}",
-                            slide.getPageNumber(), pointIndex, sentences.size());
-                } catch (Exception e) {
-                    log.error("分句处理失败，页码: {}, 内容点索引: {}", slide.getPageNumber(), pointIndex, e);
-                    failedCount++;
-                    continue;
-                }
-
-                // 4. 处理每个句子
-                for (int sentenceIndex = 0; sentenceIndex < sentences.size(); sentenceIndex++) {
-                    String sentence = sentences.get(sentenceIndex);
-
-                    try {
-                        // 计算全局片段索引
-                        int globalSegmentIndex = SegmentIndexingStrategy.generateGlobalSegmentIndex(
-                                slide.getPageNumber(), pointIndex, sentenceIndex);
-
-                        // 语音合成
-                        PPTAudioSegment audioSegment = synthesizeAudioSegment(courseId, slide, pointIndex,
-                                globalSegmentIndex, contentPoint, polishedText, sentence, options);
-
-                        if (audioSegment != null && audioSegment.getAudioData() != null && audioSegment.getAudioData().length > 0) {
-                            pageAudioSegments.add(audioSegment);
-                            segmentCount++;
-                            log.debug("音频片段合成成功，全局索引: {}, 大小: {} bytes",
-                                    globalSegmentIndex, audioSegment.getAudioData().length);
-                        } else {
-                            failedCount++;
-                            log.warn("语音合成失败，页码: {}, 内容点: {}, 句子: {}",
-                                    slide.getPageNumber(), pointIndex, sentenceIndex);
-                        }
-                    } catch (Exception e) {
-                        log.error("处理句子失败，页码: {}, 内容点: {}, 句子: {}",
-                                slide.getPageNumber(), pointIndex, sentenceIndex, e);
-                        failedCount++;
-                    }
-                }
-
-            } catch (Exception e) {
-                log.error("处理内容点失败，页码: {}, 内容点索引: {}", slide.getPageNumber(), pointIndex, e);
-                failedCount++;
-                // 继续处理其他内容点
-            }
-        }
-
-        // 5. 保存页面级音频数据
-        if (!pageAudioSegments.isEmpty()) {
-            try {
-                String audioFormat = options != null ? options.getAudioFormat() : "wav";
-                Integer sampleRate = options != null ? options.getSampleRate() : 16000;
-
-                boolean saved = pageLevelAudioService.savePageAudio(
-                        courseId,
-                        slide.getPageNumber(),
-                        slide.getTitle(),
-                        slide.getSlideType(),
-                        slide.getDescription(),
-                        pageAudioSegments,
-                        audioFormat,
-                        sampleRate
-                );
-
-                if (saved) {
-                    log.info("页面音频保存成功，页码: {}, 片段数: {}", slide.getPageNumber(), pageAudioSegments.size());
-                } else {
-                    log.error("页面音频保存失败，页码: {}", slide.getPageNumber());
-                }
-            } catch (Exception e) {
-                log.error("保存页面音频时发生异常，页码: {}", slide.getPageNumber(), e);
-            }
-        }
-
-        if (failedCount > 0) {
-            log.warn("slide处理完成，页码: {}, 成功: {}, 失败: {}",
-                    slide.getPageNumber(), segmentCount, failedCount);
-        }
-
-        return segmentCount;
-    }
 
     /**
      * 处理目录页面并返回润色文本
@@ -517,7 +219,7 @@ public class BulkSpeechServiceImpl implements BulkSpeechService {
                     log.info("开始目录页面润色，页码: {}, 原文{}字, 上限{}字",
                             slide.getPageNumber(), combinedContent.length(), hardCap);
 
-                    String polishedText = aiModelService.polishTextWithPrompt(combinedContent, customPrompt, hardCap).block();
+                    String polishedText = aiModelService.polishTextWithPrompt(combinedContent, customPrompt, hardCap).block(Duration.ofSeconds(25));
                     if (polishedText != null && !polishedText.trim().isEmpty()) {
                         finalPolishedText = polishedText;
                         log.info("目录页面润色完成，页码: {}, 原文{}字 -> 润色后{}字",
@@ -606,7 +308,7 @@ public class BulkSpeechServiceImpl implements BulkSpeechService {
                         int originalLength = contentPoint.length();
                         Integer hardCap = isAgendaOrTitlePage(slide) ? 200 : originalLength + 200;
 
-                        String result = aiModelService.polishTextWithPrompt(contentPoint, customPrompt, hardCap).block();
+                        String result = aiModelService.polishTextWithPrompt(contentPoint, customPrompt, hardCap).block(Duration.ofSeconds(25));
                         if (result != null && !result.trim().isEmpty()) {
                             polishedText = result;
                             log.info("文本润色完成，页码: {}, 内容点: {}, 原文{}字 -> 润色后{}字",
@@ -682,19 +384,53 @@ public class BulkSpeechServiceImpl implements BulkSpeechService {
                                                   String originalText, String polishedText, String sentence,
                                                   BulkSynthesisRequest.BulkSynthesisOptions options) {
         try {
-            // 1. 使用项目已有的阿里云TTS服务进行语音合成
-            byte[] audioData;
-            try {
-                Mono<byte[]> synthesisResult = textToSpeechService.synthesizeSpeech(sentence);
-                audioData = synthesisResult.block();
-                if (audioData == null || audioData.length == 0) {
-                    log.warn("TTS合成结果为空，使用模拟数据，全局索引: {}", globalSegmentIndex);
-                    audioData = simulateTTSSynthesis(sentence);
+            // 1. 先查 Redis 缓存（L1 → L2），含穿透标记处理
+            String textHash = BulkSpeechCache.textHash(sentence);
+            byte[] audioData = bulkSpeechCache.getCachedAudio(textHash);
+
+            if (audioData == null) {
+                // ── 击穿防护：尝试获取互斥锁 ──
+                boolean rebuildLocked = bulkSpeechCache.tryAcquireRebuildLock(textHash);
+                if (rebuildLocked) {
+                    try {
+                        // 二次检查缓存（可能另一线程刚重建完）
+                        audioData = bulkSpeechCache.getCachedAudio(textHash);
+                        if (audioData == null) {
+                            // 缓存未命中，调用阿里云 TTS 服务
+                            try {
+                                Mono<byte[]> synthesisResult = textToSpeechService.synthesizeSpeech(sentence);
+                                audioData = synthesisResult.block(Duration.ofSeconds(30));
+                                if (audioData == null || audioData.length == 0) {
+                                    log.error("TTS合成结果为空，全局索引: {}", globalSegmentIndex);
+                                    // 穿透防护：写入 null 标记，短 TTL
+                                    bulkSpeechCache.putCachedAudioNull(textHash);
+                                    return null;
+                                }
+                            } catch (Exception ttsError) {
+                                log.error("TTS合成失败，全局索引: {}, 错误: {}",
+                                        globalSegmentIndex, ttsError.getMessage(), ttsError);
+                                // 穿透防护：写入 null 标记
+                                bulkSpeechCache.putCachedAudioNull(textHash);
+                                return null;
+                            }
+                            // 写入缓存（雪崩防护：TTL 自动抖动）
+                            bulkSpeechCache.putCachedAudio(textHash, audioData);
+                            log.debug("TTS 缓存写入，全局索引: {}", globalSegmentIndex);
+                        }
+                    } finally {
+                        bulkSpeechCache.releaseRebuildLock(textHash);
+                    }
+                } else {
+                    // 其他线程正在重建，自旋等待
+                    audioData = bulkSpeechCache.spinWaitForRebuild(textHash);
+                    if (audioData == null) {
+                        log.warn("自旋等待重建失败，跳过该片段，全局索引: {}", globalSegmentIndex);
+                        return null;
+                    }
+                    log.debug("自旋等待后命中缓存，全局索引: {}", globalSegmentIndex);
                 }
-            } catch (Exception ttsError) {
-                log.warn("TTS合成失败，使用模拟数据，全局索引: {}, 错误: {}",
-                        globalSegmentIndex, ttsError.getMessage());
-                audioData = simulateTTSSynthesis(sentence);
+            } else {
+                log.debug("TTS 缓存命中，全局索引: {}", globalSegmentIndex);
             }
 
             long duration = estimateAudioDuration(audioData);
@@ -735,13 +471,24 @@ public class BulkSpeechServiceImpl implements BulkSpeechService {
     }
 
     /**
-     * 生成音频数据校验和
+     * 生成音频数据校验和（SHA-256）
      */
     private String generateChecksum(byte[] audioData) {
         if (audioData == null || audioData.length == 0) {
             return "";
         }
-        return String.valueOf(audioData.length) + "_" + String.valueOf(audioData.hashCode());
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(audioData);
+            StringBuilder hexString = new StringBuilder();
+            for (byte b : hash) {
+                hexString.append(String.format("%02x", b));
+            }
+            return hexString.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            log.error("SHA-256 不可用，回退到长度校验", e);
+            return "len_" + audioData.length;
+        }
     }
 
     /**
@@ -807,39 +554,10 @@ public class BulkSpeechServiceImpl implements BulkSpeechService {
     }
 
     /**
-     * 模拟TTS合成（实际项目中应该调用真实的TTS服务）
-     */
-    private byte[] simulateTTSSynthesis(String text) {
-        // 模拟音频数据，实际应该调用TextToSpeechService
-        return ("AUDIO_DATA_" + text.hashCode()).getBytes();
-    }
-
-    /**
-     * 估算音频时长
+     * 估算音频时长（使用 WavMergeUtil 精确解析 WAV 文件头）
      */
     private long estimateAudioDuration(byte[] audioData) {
-        if (audioData == null || audioData.length == 0) {
-            return 0;
-        }
-
-        // 对于WAV格式音频，尝试从文件头读取时长信息
-        if (audioData.length > 44) {
-            try {
-                // WAV文件格式：44字节头部 + 音频数据
-                // 采样率通常在字节24-27位置，但这里使用简化计算
-                // 假设16kHz采样率，16位深度，单声道
-                int dataSize = audioData.length - 44; // 减去WAV头部
-                long durationMs = (long) (dataSize / (16000.0 * 2)) * 1000; // 16kHz, 16bit = 2 bytes per sample
-                return Math.max(durationMs, 100); // 最少100ms
-            } catch (Exception e) {
-                log.debug("无法解析音频时长，使用估算值");
-            }
-        }
-
-        // 简单估算：根据音频数据大小估算时长
-        // 假设16kHz采样率，16位深度，单声道：32KB/s
-        long estimatedMs = (audioData.length * 1000L) / 32000;
-        return Math.max(estimatedMs, 100); // 最少100ms
+        return WavMergeUtil.estimateDurationMs(audioData);
     }
 
     @Override
@@ -906,8 +624,13 @@ public class BulkSpeechServiceImpl implements BulkSpeechService {
     //1
     @Override
     public BulkPreprocessingResponse processBulkPreprocessing(BulkSynthesisRequest request) {
-        //String courseId = generateCourseId();
-        String courseId = request.getCourseId();
+        return processBulkPreprocessing(request, null);
+    }
+
+    @Override
+    public BulkPreprocessingResponse processBulkPreprocessing(BulkSynthesisRequest request, Long userId) {
+        String courseId = (request.getCourseId() != null && !request.getCourseId().isBlank())
+                ? request.getCourseId() : generateCourseId();
 
         LocalDateTime startTime = LocalDateTime.now();
 
@@ -926,7 +649,7 @@ public class BulkSpeechServiceImpl implements BulkSpeechService {
             // 2. 创建会话（DRAFT状态）
             String originalText = buildOriginalText(sortedSlides);
             boolean sessionCreated = voiceDatabaseService.createCompleteSession(
-                    courseId, request.getTitle(), originalText, null, new ArrayList<>());
+                    courseId, request.getTitle(), originalText, null, new ArrayList<>(), userId);
 
             if (!sessionCreated) {
                 log.error("创建会话失败，会话ID: {}", courseId);
@@ -1052,6 +775,8 @@ public class BulkSpeechServiceImpl implements BulkSpeechService {
                     .collect(Collectors.groupingBy(AudioSegment::getSlidePageNumber));
 
             int processedSegments = 0;
+            int totalSegments = textOnlySegments.size();
+            int failedSegments = 0;
 
             for (Map.Entry<Integer, List<AudioSegment>> entry : segmentsByPage.entrySet()) {
                 Integer pageNumber = entry.getKey();
@@ -1060,24 +785,37 @@ public class BulkSpeechServiceImpl implements BulkSpeechService {
                 try {
                     int pageProcessedCount = synthesizePageAudio(courseId, pageNumber, pageSegments);
                     processedSegments += pageProcessedCount;
-                    log.info("页面音频合成完成，页码: {}, 合成片段数: {}", pageNumber, pageProcessedCount);
+                    failedSegments += pageSegments.size() - pageProcessedCount;
+                    log.info("页面音频合成完成，页码: {}, 合成片段数: {}, 失败片段数: {}",
+                            pageNumber, pageProcessedCount, pageSegments.size() - pageProcessedCount);
                 } catch (Exception e) {
                     log.error("页面音频合成失败，页码: {}", pageNumber, e);
+                    failedSegments += pageSegments.size();
                     // 继续处理其他页面
                 }
             }
 
-            // 4. 更新会话状态为SYNTHESIZED
-            updateSessionStatus(courseId, "SYNTHESIZED", null, null, null);
+            // 4. 更新会话状态：全部成功才设为 SYNTHESIZED，部分失败设为 PARTIAL_SYNTHESIZED
+            if (failedSegments == 0) {
+                updateSessionStatus(courseId, "SYNTHESIZED", null, null, null);
+            } else {
+                updateSessionStatus(courseId, "PARTIAL_SYNTHESIZED", null, null,
+                        "部分片段合成失败: " + failedSegments + "/" + totalSegments);
+                log.warn("批量语音合成部分失败，会话ID: {}, 成功: {}, 失败: {}", courseId, processedSegments, failedSegments);
+            }
 
-            log.info("批量语音合成完成，会话ID: {}, 总合成片段数: {}", courseId, processedSegments);
+            String message = failedSegments == 0
+                    ? "语音合成完成，生成 " + processedSegments + " 个音频片段"
+                    : "语音合成部分完成，成功 " + processedSegments + "/" + totalSegments + " 个片段，失败 " + failedSegments + " 个";
+
+            log.info("批量语音合成完成，会话ID: {}, 总合成片段数: {}, 失败: {}", courseId, processedSegments, failedSegments);
 
             return BulkSynthesisResponse.builder()
                     .courseId(courseId)
-                    .status("COMPLETED")
+                    .status(failedSegments == 0 ? "COMPLETED" : "PARTIAL_COMPLETED")
                     .totalSlides(segmentsByPage.size())
                     .totalContentPoints(processedSegments)
-                    .message("语音合成完成，生成 " + processedSegments + " 个音频片段")
+                    .message(message)
                     .startTime(startTime)
                     .build();
 
@@ -1106,6 +844,12 @@ public class BulkSpeechServiceImpl implements BulkSpeechService {
             return voiceDatabaseService.getSessionsByStatus(null);
         }
         return voiceDatabaseService.getSessionsByStatus(status);
+    }
+
+    @Override
+    public com.baomidou.mybatisplus.core.metadata.IPage<LessonSession> getSessionsByStatusPage(String status, long page, long size) {
+        log.info("分页获取会话列表，状态: {}, 页码: {}, 每页: {}", status, page, size);
+        return voiceDatabaseService.getSessionsByStatusPage(status, page, size);
     }
 
     @Override
@@ -1319,50 +1063,6 @@ public class BulkSpeechServiceImpl implements BulkSpeechService {
     }
 
     /**
-     * 处理单个slide的文本预处理（不生成音频）- 保持向后兼容
-     */
-    private int processSlideTextOnly(String courseId, BulkSynthesisRequest.SlideData slide,
-                                   BulkSynthesisRequest.BulkSynthesisOptions options) {
-
-        log.info("开始处理页面文本，会话ID: {}, 页码: {}, 内容点数: {}",
-                courseId, slide.getPageNumber(), slide.getContentPoints().size());
-
-        List<PPTAudioSegment> textSegments = new ArrayList<>();
-        int segmentCount = 0;
-
-        // 检查是否为目录页面
-        if (isAgendaOrTitlePage(slide)) {
-            segmentCount = processAgendaSlideTextOnly(courseId, slide, options, textSegments);
-        } else {
-            segmentCount = processNormalSlideTextOnly(courseId, slide, options, textSegments);
-        }
-
-        // 保存文本片段到数据库（不包含音频数据）
-        if (!textSegments.isEmpty()) {
-            try {
-                boolean saved = pageLevelAudioService.saveTextOnlySegments(
-                        courseId,
-                        slide.getPageNumber(),
-                        slide.getTitle(),
-                        slide.getSlideType(),
-                        slide.getDescription(),
-                        textSegments
-                );
-
-                if (saved) {
-                    log.info("页面文本片段保存成功，页码: {}, 片段数: {}", slide.getPageNumber(), textSegments.size());
-                } else {
-                    log.error("页面文本片段保存失败，页码: {}", slide.getPageNumber());
-                }
-            } catch (Exception e) {
-                log.error("保存页面文本片段时发生异常，页码: {}", slide.getPageNumber(), e);
-            }
-        }
-
-        return segmentCount;
-    }
-
-    /**
      * 处理目录页面的文本预处理并返回润色文本
      */
     private SlideTextProcessResult processAgendaSlideTextOnlyWithPolishedText(String courseId, BulkSynthesisRequest.SlideData slide,
@@ -1380,7 +1080,7 @@ public class BulkSpeechServiceImpl implements BulkSpeechService {
                     String customPrompt = pptContextualPolishing.generatePolishingPrompt(slide, combinedContent, 0);
                     Integer hardCap = 200; // 目录页面固定200字限制
 
-                    String polishedText = aiModelService.polishTextWithPrompt(combinedContent, customPrompt, hardCap).block();
+                    String polishedText = aiModelService.polishTextWithPrompt(combinedContent, customPrompt, hardCap).block(Duration.ofSeconds(25));
                     if (polishedText != null && !polishedText.trim().isEmpty()) {
                         finalPolishedText = polishedText;
                     }
@@ -1441,76 +1141,6 @@ public class BulkSpeechServiceImpl implements BulkSpeechService {
     }
 
     /**
-     * 处理目录页面的文本预处理 - 保持向后兼容
-     */
-    private int processAgendaSlideTextOnly(String courseId, BulkSynthesisRequest.SlideData slide,
-                                         BulkSynthesisRequest.BulkSynthesisOptions options,
-                                         List<PPTAudioSegment> textSegments) {
-
-        // 合并所有内容点为一个字符串
-        String combinedContent = String.join(" ", slide.getContentPoints());
-
-        try {
-            // 1. 文本润色（如果启用）
-            String polishedText = combinedContent;
-            if (options != null && Boolean.TRUE.equals(options.getEnablePolishing())) {
-                try {
-                    String customPrompt = pptContextualPolishing.generatePolishingPrompt(slide, combinedContent, 0);
-                    Integer hardCap = 200; // 目录页面固定200字限制
-
-                    polishedText = aiModelService.polishTextWithPrompt(combinedContent, customPrompt, hardCap).block();
-                    if (polishedText == null || polishedText.trim().isEmpty()) {
-                        polishedText = combinedContent;
-                    }
-                } catch (Exception e) {
-                    log.warn("目录页面润色失败，使用原文，页码: {}", slide.getPageNumber(), e);
-                    polishedText = combinedContent;
-                }
-            }
-
-            // 2. 分句处理
-            List<String> sentences = segmentedSpeechService.splitTextBySentence(polishedText);
-            if (sentences.isEmpty()) {
-                return 0;
-            }
-
-            // 3. 创建文本片段（不包含音频数据）
-            for (int sentenceIndex = 0; sentenceIndex < sentences.size(); sentenceIndex++) {
-                String sentence = sentences.get(sentenceIndex);
-                int globalSegmentIndex = SegmentIndexingStrategy.generateGlobalSegmentIndex(
-                        slide.getPageNumber(), 0, sentenceIndex);
-
-                PPTAudioSegment textSegment = PPTAudioSegment.builder()
-                        .courseId(courseId)
-                        .slidePageNumber(slide.getPageNumber())
-                        .slideTitle(slide.getTitle())
-                        .contentPointIndex(0)
-                        .segmentIndex(globalSegmentIndex)
-                        .slideType(slide.getSlideType())
-                        .slideDescription(slide.getDescription())
-                        .originalText(combinedContent)
-                        .polishedText(polishedText)
-                        .textContent(sentence)
-                        .audioData(null) // 不包含音频数据
-                        .audioSize(0L)
-                        .duration(0L)
-                        .audioFormat(options != null ? options.getAudioFormat() : "wav")
-                        .sampleRate(options != null ? options.getSampleRate() : 16000)
-                        .createdAt(LocalDateTime.now())
-                        .build();
-
-                textSegments.add(textSegment);
-            }
-
-            return sentences.size();
-
-        } catch (Exception e) {
-            log.error("处理目录页面文本失败，页码: {}", slide.getPageNumber(), e);
-            return 0;
-        }
-    }
-
-    /**
      * 处理普通页面的文本预处理并返回润色文本
      */
     private SlideTextProcessResult processNormalSlideTextOnlyWithPolishedText(String courseId, BulkSynthesisRequest.SlideData slide,
@@ -1536,7 +1166,7 @@ public class BulkSpeechServiceImpl implements BulkSpeechService {
                         int originalLength = contentPoint.length();
                         Integer hardCap = originalLength + 200;
 
-                        String result = aiModelService.polishTextWithPrompt(contentPoint, customPrompt, hardCap).block();
+                        String result = aiModelService.polishTextWithPrompt(contentPoint, customPrompt, hardCap).block(Duration.ofSeconds(25));
                         if (result != null && !result.trim().isEmpty()) {
                             polishedText = result;
                         }
@@ -1599,85 +1229,6 @@ public class BulkSpeechServiceImpl implements BulkSpeechService {
     }
 
     /**
-     * 处理普通页面的文本预处理 - 保持向后兼容
-     */
-    private int processNormalSlideTextOnly(String courseId, BulkSynthesisRequest.SlideData slide,
-                                         BulkSynthesisRequest.BulkSynthesisOptions options,
-                                         List<PPTAudioSegment> textSegments) {
-
-        int segmentCount = 0;
-
-        for (int pointIndex = 0; pointIndex < slide.getContentPoints().size(); pointIndex++) {
-            String contentPoint = slide.getContentPoints().get(pointIndex);
-
-            if (contentPoint == null || contentPoint.trim().isEmpty()) {
-                continue;
-            }
-
-            try {
-                // 1. 文本润色
-                String polishedText = contentPoint;
-                if (options != null && Boolean.TRUE.equals(options.getEnablePolishing())) {
-                    try {
-                        String customPrompt = pptContextualPolishing.generatePolishingPrompt(slide, contentPoint, pointIndex);
-                        int originalLength = contentPoint.length();
-                        Integer hardCap = originalLength + 200;
-
-                        polishedText = aiModelService.polishTextWithPrompt(contentPoint, customPrompt, hardCap).block();
-                        if (polishedText == null || polishedText.trim().isEmpty()) {
-                            polishedText = contentPoint;
-                        }
-                    } catch (Exception e) {
-                        log.warn("文本润色失败，使用原文，页码: {}, 内容点索引: {}",
-                                slide.getPageNumber(), pointIndex, e);
-                        polishedText = contentPoint;
-                    }
-                }
-
-                // 2. 分句处理
-                List<String> sentences = segmentedSpeechService.splitTextBySentence(polishedText);
-                if (sentences.isEmpty()) {
-                    continue;
-                }
-
-                // 3. 创建文本片段
-                for (int sentenceIndex = 0; sentenceIndex < sentences.size(); sentenceIndex++) {
-                    String sentence = sentences.get(sentenceIndex);
-                    int globalSegmentIndex = SegmentIndexingStrategy.generateGlobalSegmentIndex(
-                            slide.getPageNumber(), pointIndex, sentenceIndex);
-
-                    PPTAudioSegment textSegment = PPTAudioSegment.builder()
-                            .courseId(courseId)
-                            .slidePageNumber(slide.getPageNumber())
-                            .slideTitle(slide.getTitle())
-                            .contentPointIndex(pointIndex)
-                            .segmentIndex(globalSegmentIndex)
-                            .slideType(slide.getSlideType())
-                            .slideDescription(slide.getDescription())
-                            .originalText(contentPoint)
-                            .polishedText(polishedText)
-                            .textContent(sentence)
-                            .audioData(null) // 不包含音频数据
-                            .audioSize(0L)
-                            .duration(0L)
-                            .audioFormat(options != null ? options.getAudioFormat() : "wav")
-                            .sampleRate(options != null ? options.getSampleRate() : 16000)
-                            .createdAt(LocalDateTime.now())
-                            .build();
-
-                    textSegments.add(textSegment);
-                    segmentCount++;
-                }
-
-            } catch (Exception e) {
-                log.error("处理内容点文本失败，页码: {}, 内容点索引: {}", slide.getPageNumber(), pointIndex, e);
-            }
-        }
-
-        return segmentCount;
-    }
-
-    /**
      * 为页面的文本片段生成音频
      */
     private int synthesizePageAudio(String courseId, Integer pageNumber, List<AudioSegment> textSegments) {
@@ -1688,17 +1239,41 @@ public class BulkSpeechServiceImpl implements BulkSpeechService {
 
         for (AudioSegment textSegment : textSegments) {
             try {
-                // 语音合成
-                byte[] audioData;
-                try {
-                    Mono<byte[]> synthesisResult = textToSpeechService.synthesizeSpeech(textSegment.getTextContent());
-                    audioData = synthesisResult.block();
-                    if (audioData == null || audioData.length == 0) {
-                        audioData = simulateTTSSynthesis(textSegment.getTextContent());
+                // 语音合成 — 含穿透/击穿/雪崩防护
+                String textHash = BulkSpeechCache.textHash(textSegment.getTextContent());
+                byte[] audioData = bulkSpeechCache.getCachedAudio(textHash);
+
+                if (audioData == null) {
+                    boolean rebuildLocked = bulkSpeechCache.tryAcquireRebuildLock(textHash);
+                    if (rebuildLocked) {
+                        try {
+                            audioData = bulkSpeechCache.getCachedAudio(textHash); // 二次检查
+                            if (audioData == null) {
+                                try {
+                                    Mono<byte[]> synthesisResult = textToSpeechService.synthesizeSpeech(textSegment.getTextContent());
+                                    audioData = synthesisResult.block(Duration.ofSeconds(30));
+                                    if (audioData == null || audioData.length == 0) {
+                                        log.error("TTS合成结果为空，片段: {}", textSegment.getSegmentIndex());
+                                        bulkSpeechCache.putCachedAudioNull(textHash);
+                                        continue;
+                                    }
+                                } catch (Exception ttsError) {
+                                    log.error("TTS合成失败，片段: {}", textSegment.getSegmentIndex(), ttsError);
+                                    bulkSpeechCache.putCachedAudioNull(textHash);
+                                    continue;
+                                }
+                                bulkSpeechCache.putCachedAudio(textHash, audioData);
+                            }
+                        } finally {
+                            bulkSpeechCache.releaseRebuildLock(textHash);
+                        }
+                    } else {
+                        audioData = bulkSpeechCache.spinWaitForRebuild(textHash);
+                        if (audioData == null) {
+                            log.warn("自旋等待重建失败，跳过片段: {}", textSegment.getSegmentIndex());
+                            continue;
+                        }
                     }
-                } catch (Exception ttsError) {
-                    log.warn("TTS合成失败，使用模拟数据，片段: {}", textSegment.getSegmentIndex(), ttsError);
-                    audioData = simulateTTSSynthesis(textSegment.getTextContent());
                 }
 
                 long duration = estimateAudioDuration(audioData);

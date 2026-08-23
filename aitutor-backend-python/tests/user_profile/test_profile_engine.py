@@ -113,9 +113,15 @@ class BuildUserProfileTest(unittest.TestCase):
     self.assertEqual(firstEventAt + timedelta(minutes=1), result.metadata.firstEventAt)
     self.assertEqual(firstEventAt + timedelta(minutes=14), result.metadata.lastEventAt)
     self.assertEqual(
-      "mastery-rule-v1",
+      "mastery-bayesian-v2",
       result.metadata.algorithmVersions["mastery"],
     )
+    self.assertIsNotNone(mastery.bayesianScore)
+    self.assertIsNotNone(mastery.confidence)
+    self.assertIsNone(mastery.trend)
+    self.assertIsNotNone(result.confusionPoints[0].confidence)
+    self.assertIsNotNone(result.learningPreference.confidence)
+    self.assertIsNotNone(result.learningPreference.preferenceStrength)
 
   def testMarksProfilePartialWhenEventSourcesAreMissing(self):
     """只有部分来源时应继续生成画像并列出缺失来源。"""
@@ -271,6 +277,26 @@ class BuildUserProfileTest(unittest.TestCase):
     self.assertIsNone(result.confusionPoints[0].knowledgePointKey)
     self.assertEqual((), tuple(result.masteryByKnowledgePoint))
 
+  def testPassesConfusionConfidenceToConfusionPoint(self):
+    """困惑点的置信度评分应正确传递到画像结果。"""
+    occurredAt = datetime(2026, 7, 25, 9, 0, tzinfo=timezone.utc)
+    event = self.makeEvent(
+      "message-confidence",
+      EventSource.CONVERSATION_MESSAGES,
+      EventType.CONVERSATION_MESSAGE,
+      occurredAt,
+      data={"text": "我不懂这个符号是什么意思"},
+    )
+
+    result = profile_engine.buildUserProfile(
+      [event],
+      userId=1001,
+      generatedAt=occurredAt,
+    )
+
+    self.assertEqual(1, len(result.confusionPoints))
+    self.assertGreater(result.confusionPoints[0].confidence, 0)
+
   def testKeepsNonAnswerKnowledgePointAsInsufficientData(self):
     """只有错题证据的知识点应保留并标记为数据不足。"""
     occurredAt = datetime(2026, 7, 25, 9, 0, tzinfo=timezone.utc)
@@ -335,6 +361,9 @@ class BuildUserProfileTest(unittest.TestCase):
         for mode in result.learningPreference.dominantDimensions
       ),
     )
+    self.assertIsNotNone(result.learningPreference.confidence)
+    self.assertIsNotNone(result.learningPreference.preferenceStrength)
+    self.assertGreater(result.learningPreference.preferenceStrength, 0.0)
 
   def testMergesPreferenceWarningsIntoProfileWarnings(self):
     """非法学习模式警告应汇总到画像顶层。"""

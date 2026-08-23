@@ -32,6 +32,14 @@ class ProfileStatus(str, Enum):
   MASTERED = "mastered"
 
 
+class MasteryTrend(str, Enum):
+  """知识点掌握趋势。"""
+
+  IMPROVING = "IMPROVING"
+  STABLE = "STABLE"
+  DECLINING = "DECLINING"
+
+
 class ProfileBuildStatus(str, Enum):
   """整份用户画像的生成状态。"""
 
@@ -114,7 +122,11 @@ class AggregationResult:
 
 @dataclass(frozen=True)
 class KnowledgeMastery:
-  """单个知识点的可解释掌握判定。"""
+  """单个知识点的可解释掌握判定。
+
+  v2 升级：新增贝叶斯后验均值、Wilson 置信区间和趋势判定，
+  使掌握度评估对小样本更鲁棒，并提供可解释的置信度度量。
+  """
 
   knowledgePointKey: str
   status: ProfileStatus
@@ -123,17 +135,26 @@ class KnowledgeMastery:
   minimumAnswerCount: int
   masteryThreshold: float
   algorithmVersion: str
+  # v2 新增字段
+  bayesianScore: float | None = None
+  confidence: float | None = None
+  trend: MasteryTrend | None = None
 
 
 @dataclass(frozen=True)
 class ConfusionPoint:
-  """从对话事件中提取出的单个困惑点。"""
+  """从对话事件中提取出的单个困惑点。
+
+  v2 升级：新增置信度评分，基于命中模式数量和否定排除综合计算。
+  """
 
   eventId: str
   knowledgePointKey: str | None
   occurredAt: datetime
   matchedPatterns: tuple[str, ...]
   textExcerpt: str
+  # v2 新增字段
+  confidence: float | None = None
 
 
 @dataclass(frozen=True)
@@ -147,7 +168,10 @@ class DataQualityWarning:
 
 @dataclass(frozen=True)
 class LearningPreferenceVector:
-  """基于学习行为证据生成的四维偏好向量。"""
+  """基于学习行为证据生成的四维偏好向量。
+
+  v2 升级：新增 Shannon 熵度量的偏好强度，低熵表示强偏好，高熵表示均衡。
+  """
 
   status: LearningPreferenceStatus
   scores: Mapping[LearningMode, float]
@@ -157,6 +181,9 @@ class LearningPreferenceVector:
   minimumEvidenceCount: int
   algorithmVersion: str
   dataQualityWarnings: tuple[DataQualityWarning, ...]
+  # v2 新增字段
+  confidence: float | None = None
+  preferenceStrength: float | None = None
 
 
 @dataclass(frozen=True)

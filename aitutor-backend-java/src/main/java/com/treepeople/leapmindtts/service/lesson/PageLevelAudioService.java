@@ -3,6 +3,8 @@ package com.treepeople.leapmindtts.service.lesson;
 import com.treepeople.leapmindtts.pojo.dto.PPTAudioSegment;
 import com.treepeople.leapmindtts.pojo.entity.AudioSegment;
 
+import java.io.IOException;
+import java.io.OutputStream;
 import java.util.List;
 
 /**
@@ -116,6 +118,30 @@ public interface PageLevelAudioService {
      * @return 页面完整音频数据
      */
     byte[] getPageAudioData(String courseId, Integer pageNumber);
+
+    /**
+     * 轻量检查页面是否存在已生成的音频（不加载音频数据，用于流式输出前的 404 判断）
+     *
+     * @param courseId 会话ID
+     * @param pageNumber 页码
+     * @return 是否存在
+     */
+    boolean hasPageAudio(String courseId, Integer pageNumber);
+
+    /**
+     * 流式输出页面完整音频（合并所有片段为 WAV），避免整页音频一次性加载到内存导致 OOM。
+     *
+     * <p>内存峰值 = 单个最大片段的音频大小。实现为两遍扫描：
+     * <ol>
+     *   <li>第一遍：逐段加载统计总 PCM 大小并提取 WAV 格式参数（用后即弃）</li>
+     *   <li>写入 WAV header，第二遍：逐段加载并写入 PCM 数据（剥离各片段 WAV 头）</li>
+     * </ol>
+     *
+     * @param courseId 会话ID
+     * @param pageNumber 页码
+     * @param outputStream 输出流（由调用方负责关闭）
+     */
+    void streamPageAudio(String courseId, Integer pageNumber, OutputStream outputStream) throws IOException;
 
     /**
      * 获取页面的片段元数据信息（不包含音频数据）
