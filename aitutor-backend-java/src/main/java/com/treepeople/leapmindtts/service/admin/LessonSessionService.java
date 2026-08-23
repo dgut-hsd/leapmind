@@ -1,5 +1,6 @@
 package com.treepeople.leapmindtts.service.admin;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.treepeople.leapmindtts.pojo.entity.LessonSession;
 
@@ -19,6 +20,11 @@ public interface LessonSessionService extends IService<LessonSession> {
      * 创建新的讲课会话
      */
     boolean createSession(String courseId, String title, String originalText, String polishedText);
+
+    /**
+     * 创建新的讲课会话（带归属用户ID，用于权限校验）
+     */
+    boolean createSession(String courseId, String title, String originalText, String polishedText, Long userId);
 
     /**
      * 更新会话的总片段数和总时长
@@ -59,6 +65,11 @@ public interface LessonSessionService extends IService<LessonSession> {
      * 根据状态查询会话列表
      */
     List<LessonSession> getSessionsByStatus(String status);
+
+    /**
+     * 分页查询会话列表（status 为 null 时查询所有）
+     */
+    IPage<LessonSession> getSessionsByStatusPage(String status, long page, long size);
 
     /**
      * 更新会话状态

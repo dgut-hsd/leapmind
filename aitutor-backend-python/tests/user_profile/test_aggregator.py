@@ -12,6 +12,7 @@ from landppt.user_profile.models import (
   EventType,
   KnowledgeEvidence,
   LearningEvent,
+  MasteryTrend,
   ProfileStatus,
 )
 
@@ -187,6 +188,9 @@ class CalculateMasteryTest(unittest.TestCase):
     self.assertEqual(ProfileStatus.INSUFFICIENT_DATA, mastery.status)
     self.assertEqual(10, mastery.sampleCount)
     self.assertEqual(1.0, mastery.correctRate)
+    self.assertIsNotNone(mastery.bayesianScore)
+    self.assertIsNotNone(mastery.confidence)
+    self.assertIsNone(mastery.trend)
 
   def testMarksMasteredAboveBothThresholds(self):
     """11 次答题且正确率超过 80% 时应判定掌握。"""
@@ -203,6 +207,9 @@ class CalculateMasteryTest(unittest.TestCase):
     self.assertEqual(10, mastery.minimumAnswerCount)
     self.assertEqual(0.8, mastery.masteryThreshold)
     self.assertTrue(mastery.algorithmVersion)
+    self.assertAlmostEqual(0.7333, mastery.bayesianScore, places=4)
+    self.assertIsNotNone(mastery.confidence)
+    self.assertIsNone(mastery.trend)
 
   def testKeepsLearningWhenCorrectRateDoesNotExceedThreshold(self):
     """样本充足但正确率未超过 80% 时应保持学习中。"""
@@ -216,6 +223,101 @@ class CalculateMasteryTest(unittest.TestCase):
 
     self.assertEqual(ProfileStatus.LEARNING, mastery.status)
     self.assertAlmostEqual(8 / 11, mastery.correctRate)
+
+
+class BayesianMasteryTest(unittest.TestCase):
+  """验证贝叶斯后验评分、Wilson 置信度和趋势判定。"""
+
+  def testBayesianScoreShrinksTowardPriorForSmallSamples(self):
+    """小样本时贝叶斯评分应向先验中心 0.5 收缩。
+
+    1 对 / 1 总的裸正确率为 1.0，但贝叶斯后验 = (2+1)/(2+2+1) = 0.6。
+    """
+    evidence = KnowledgeEvidence(
+      knowledgePointKey="导数定义",
+      answerCount=1,
+      correctAnswerCount=1,
+    )
+
+    mastery = calculateMastery(evidence)
+
+    self.assertEqual(1.0, mastery.correctRate)
+    self.assertAlmostEqual(0.6, mastery.bayesianScore, places=4)
+
+  def testWilsonConfidenceIncreasesWithSampleSize(self):
+    """相同正确率下样本量越大置信度应越高。"""
+    smallEvidence = KnowledgeEvidence(
+      knowledgePointKey="导数定义",
+      answerCount=11,
+      correctAnswerCount=9,
+    )
+    largeEvidence = KnowledgeEvidence(
+      knowledgePointKey="导数定义",
+      answerCount=110,
+      correctAnswerCount=90,
+    )
+
+    smallMastery = calculateMastery(smallEvidence)
+    largeMastery = calculateMastery(largeEvidence)
+
+    self.assertAlmostEqual(9 / 11, smallMastery.correctRate)
+    self.assertAlmostEqual(90 / 110, largeMastery.correctRate)
+    self.assertLess(smallMastery.confidence, largeMastery.confidence)
+
+  def testTrendIsNoneForFirstCalculation(self):
+    """首次计算无历史数据时趋势应为 None。"""
+    evidence = KnowledgeEvidence(
+      knowledgePointKey="导数定义",
+      answerCount=11,
+      correctAnswerCount=9,
+    )
+
+    mastery = calculateMastery(evidence)
+
+    self.assertIsNone(mastery.trend)
+
+  def testTrendImprovingWhenScoreIncreases(self):
+    """当前评分显著高于历史时应判定为提升。
+
+    传入 previousBayesianScore=0.3，当前后验 ≈ 0.7333（11答9对），
+    差值远大于 0.05 阈值。
+    """
+    evidence = KnowledgeEvidence(
+      knowledgePointKey="导数定义",
+      answerCount=11,
+      correctAnswerCount=9,
+    )
+
+    mastery = calculateMastery(evidence, previousBayesianScore=0.3)
+
+    self.assertAlmostEqual(0.7333, mastery.bayesianScore, places=4)
+    self.assertEqual(MasteryTrend.IMPROVING, mastery.trend)
+
+  def testTrendStableWhenScoreChangeIsSmall(self):
+    """评分变化小于阈值时应判定为稳定。"""
+    evidence = KnowledgeEvidence(
+      knowledgePointKey="导数定义",
+      answerCount=11,
+      correctAnswerCount=9,
+    )
+
+    mastery = calculateMastery(evidence, previousBayesianScore=0.72)
+
+    self.assertAlmostEqual(0.7333, mastery.bayesianScore, places=4)
+    self.assertEqual(MasteryTrend.STABLE, mastery.trend)
+
+  def testTrendDecliningWhenScoreDecreases(self):
+    """当前评分显著低于历史时应判定为下降。"""
+    evidence = KnowledgeEvidence(
+      knowledgePointKey="导数定义",
+      answerCount=11,
+      correctAnswerCount=9,
+    )
+
+    mastery = calculateMastery(evidence, previousBayesianScore=0.9)
+
+    self.assertAlmostEqual(0.7333, mastery.bayesianScore, places=4)
+    self.assertEqual(MasteryTrend.DECLINING, mastery.trend)
 
 
 if __name__ == "__main__":

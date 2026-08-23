@@ -14,8 +14,8 @@ export class ExpressionController {
     this._currentLipSync = null; // 兼容单嘴型输入
     this._currentVisemeWeights = null; // 多嘴型输入 { aa, ih, ou, ee, oh }
     this._prevVisemeWeights = { aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 };
-    this._lipRise = 0.5; // 上升平滑系数
-    this._lipFall = 0.25; // 下降平滑系数
+    this._lipRise = 0.35; // 上升系数
+    this._lipFall = 0.55; // 下降更快，确保字间能闭嘴
 
     this._emotionTimeout = null; // 添加表情超时管理
 
@@ -63,10 +63,8 @@ export class ExpressionController {
     if (!this._expressionManager) {
       return;
     }
-    
     // 只存储嘴型数据，不直接设置权重，让update方法统一处理
     this._currentLipSync = { preset, value };
-    this._currentVisemeWeights = null; // 清空多嘴型，保持互斥
   }
 
   // 多嘴型权重输入（优先于单嘴型）
@@ -82,7 +80,6 @@ export class ExpressionController {
       ee: Math.max(0, Math.min(1, weights?.ee ?? 0)),
       oh: Math.max(0, Math.min(1, weights?.oh ?? 0)),
     };
-    this._currentLipSync = null; // 清空单嘴型输入
   }
 
   update(delta) {
@@ -90,23 +87,20 @@ export class ExpressionController {
       this._autoBlink.update(delta);
     }
 
-    // 处理嘴型同步（优先使用多嘴型）
+    // 处理嘴型同步（visemeWeights 优先，无则用 lipSync，都无则衰减）
     if (this._expressionManager) {
-      let targetWeights = null;
+      let targetWeights;
       if (this._currentVisemeWeights) {
         targetWeights = this._currentVisemeWeights;
       } else if (this._currentLipSync) {
-        // 单嘴型回退为权重对象
         const { preset, value } = this._currentLipSync;
         targetWeights = { aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 };
         if (preset in targetWeights) {
           targetWeights[preset] = value;
         } else {
-          // 若预设不是标准键，默认映射到 aa
           targetWeights.aa = value;
         }
       } else {
-        // 无输入：全部衰减为0
         targetWeights = { aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 };
       }
 

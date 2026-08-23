@@ -1,5 +1,6 @@
 package com.treepeople.leapmindtts.exception;
 
+import com.treepeople.leapmindtts.controller.lesson.BulkSpeechController;
 import com.treepeople.leapmindtts.pojo.dto.BulkSynthesisResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -17,8 +18,11 @@ import java.util.stream.Collectors;
 
 /**
  * 批量语音合成异常处理器
+ * <p>
+ * 仅作用于 {@link BulkSpeechController}，避免参数校验/兜底异常处理器
+ * 以 BulkSynthesisResponse 格式污染其他模块的异常响应。
  */
-@RestControllerAdvice
+@RestControllerAdvice(assignableTypes = BulkSpeechController.class)
 @Slf4j
 public class BulkSpeechExceptionHandler {
     
@@ -38,6 +42,22 @@ public class BulkSpeechExceptionHandler {
                 .build();
         
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+    }
+
+    /**
+     * 处理批量语音合成限流异常（429 Too Many Requests）
+     */
+    @ExceptionHandler(BulkSpeechRateLimitException.class)
+    public ResponseEntity<BulkSynthesisResponse> handleRateLimitException(BulkSpeechRateLimitException e) {
+        log.warn("批量语音合成限流: {}", e.getMessage());
+
+        BulkSynthesisResponse response = BulkSynthesisResponse.builder()
+                .status("RATE_LIMITED")
+                .message(e.getMessage())
+                .startTime(LocalDateTime.now())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(response);
     }
     
     /**
@@ -114,21 +134,5 @@ public class BulkSpeechExceptionHandler {
                 .build();
         
         return ResponseEntity.badRequest().body(response);
-    }
-    
-    /**
-     * 处理通用异常
-     */
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<BulkSynthesisResponse> handleGenericException(Exception e) {
-        log.error("未处理的异常", e);
-        
-        BulkSynthesisResponse response = BulkSynthesisResponse.builder()
-                .status("FAILED")
-                .message("系统内部错误，请稍后重试")
-                .startTime(LocalDateTime.now())
-                .build();
-        
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
     }
 }

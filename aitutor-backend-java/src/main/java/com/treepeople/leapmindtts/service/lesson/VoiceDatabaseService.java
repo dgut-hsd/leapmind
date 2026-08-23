@@ -1,5 +1,6 @@
 package com.treepeople.leapmindtts.service.lesson;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.treepeople.leapmindtts.pojo.entity.AudioSegment;
 import com.treepeople.leapmindtts.pojo.entity.LessonSession;
 
@@ -18,6 +19,12 @@ public interface VoiceDatabaseService {
      */
     boolean createCompleteSession(String courseId, String title, String originalText,
                                 String polishedText, List<AudioSegment> segments);
+
+    /**
+     * 创建完整的讲课会话（带归属用户ID，用于权限校验）
+     */
+    boolean createCompleteSession(String courseId, String title, String originalText,
+                                String polishedText, List<AudioSegment> segments, Long userId);
 
     /**
      * 获取会话的完整信息（包含音频片段统计）
@@ -64,6 +71,14 @@ public interface VoiceDatabaseService {
      * @param status 状态，为null时返回所有会话
      */
     List<LessonSession> getSessionsByStatus(String status);
+
+    /**
+     * 分页获取会话列表
+     * @param status 状态，为null时返回所有会话
+     * @param page 页码（从1开始）
+     * @param size 每页大小
+     */
+    IPage<LessonSession> getSessionsByStatusPage(String status, long page, long size);
 
     /**
      * 更新会话状态

@@ -6,7 +6,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -51,7 +53,7 @@ public class TextToSpeechService {
             return Mono.just(new byte[0]); // 返回空音频数据
         }
 
-        // 阿里云TTS短文本合成有300字符的限制，我们需要智能处理长文本
+        // 阿里云TTS短文本合成有300字符的限制，长文本需要分段合成后合并
         final String originalText = text;
         final String selectedVoice = requestedVoice == null
                 || requestedVoice.isBlank()
@@ -66,14 +68,16 @@ public class TextToSpeechService {
             return synthesizeSingleSegment(originalText, voice, normalizedSpeed);
         }
 
+        // 长文本：分段合成后合并音频
+        log.info("文本过长（{} > 290），启用分段合成", originalText.length());
+        List<String> segments = splitLongText(originalText, 290);
 
-        // 长文本截断
-        final String processedText = smartTruncateText(originalText, 290);
-        log.warn("文本过长（{} > 290），已智能截断. 原长度: {}, 截断后长度: {}",
-                originalText.length(), processedText.length());
-        log.debug("截断后文本: {}", processedText);
+        if (segments.size() == 1) {
+            return synthesizeSingleSegment(segments.get(0), voice, normalizedSpeed);
+        }
 
-        return synthesizeSingleSegment(processedText, voice, normalizedSpeed);
+        // 依次合成每段，合并结果
+        return synthesizeAndMergeSegments(segments, voice, normalizedSpeed);
     }
 
     /**
@@ -83,7 +87,7 @@ public class TextToSpeechService {
      * @return 音频数据
      */
     private Mono<byte[]> synthesizeSingleSegment(String text, String voice, double speed) {
-        log.info("发送TTS请求: text={}, voice={}, speed={}, format={}", text, voice, speed, "wav");
+        log.debug("发送TTS请求: text长度={}, voice={}, speed={}, format={}", text.length(), voice, speed, "wav");
 
         // 动态获取Token并发送请求
         return tokenService.getToken()
@@ -104,7 +108,7 @@ public class TextToSpeechService {
 
                     if (appKey != null && !appKey.trim().isEmpty()) {
                         request.put("appkey", appKey);
-                        log.debug("使用appkey: {}", appKey);
+                        log.debug("使用appkey: {}", appKey.substring(0, Math.min(4, appKey.length())) + "***");
                     }
 
                     log.debug("最终TTS请求JSON: {}", request);
@@ -142,17 +146,21 @@ public class TextToSpeechService {
                                     } else {
                                         return new RuntimeException("TTS合成失败: " + webError.getStatusCode() + " - " + errorBody);
                                     }
-                                } else if (error instanceof java.util.concurrent.TimeoutException ||
-                                          error.getMessage().contains("timeout") ||
-                                          error.getMessage().contains("handshake timed out")) {
+                                } else if (error instanceof java.util.concurrent.TimeoutException) {
                                     log.error("TTS请求超时: {}", error.getMessage());
                                     return new RuntimeException("TTS服务连接超时，可能是网络问题，请检查网络连接后重试");
-                                } else if (error.getMessage().contains("Connection refused") ||
-                                          error.getMessage().contains("UnknownHostException")) {
-                                    log.error("TTS服务连接失败: {}", error.getMessage());
-                                    return new RuntimeException("无法连接到TTS服务，请检查网络连接");
                                 } else {
-                                    return new RuntimeException("TTS合成失败: " + error.getMessage());
+                                    String errorMsg = error.getMessage();
+                                    if (errorMsg != null) {
+                                        if (errorMsg.contains("timeout") || errorMsg.contains("handshake timed out")) {
+                                            log.error("TTS请求超时: {}", errorMsg);
+                                            return new RuntimeException("TTS服务连接超时，可能是网络问题，请检查网络连接后重试");
+                                        } else if (errorMsg.contains("Connection refused") || errorMsg.contains("UnknownHostException")) {
+                                            log.error("TTS服务连接失败: {}", errorMsg);
+                                            return new RuntimeException("无法连接到TTS服务，请检查网络连接");
+                                        }
+                                    }
+                                    return new RuntimeException("TTS合成失败: " + (errorMsg != null ? errorMsg : "未知错误"));
                                 }
                             });
                 });
@@ -160,13 +168,101 @@ public class TextToSpeechService {
 
 
     /**
-     * 智能截断文本
+     * 将长文本分割为不超过 maxLength 的段，尽量在句子结束符处切分
+     *
+     * @param text 原始文本
+     * @param maxLength 每段最大长度
+     * @return 分段列表
+     */
+    private List<String> splitLongText(String text, int maxLength) {
+        List<String> segments = new ArrayList<>();
+        if (text == null || text.length() <= maxLength) {
+            if (text != null) segments.add(text);
+            return segments;
+        }
+
+        int start = 0;
+        while (start < text.length()) {
+            int end = Math.min(start + maxLength, text.length());
+
+            if (end < text.length()) {
+                // 在 [start, end] 范围内查找最后一个句子结束符
+                String chunk = text.substring(start, end);
+                int[] endPositions = {
+                    chunk.lastIndexOf('。'),
+                    chunk.lastIndexOf('！'),
+                    chunk.lastIndexOf('？'),
+                    chunk.lastIndexOf(';'),
+                    chunk.lastIndexOf('；'),
+                    chunk.lastIndexOf(','),
+                    chunk.lastIndexOf('，')
+                };
+
+                int bestEnd = -1;
+                for (int pos : endPositions) {
+                    if (pos > bestEnd) bestEnd = pos;
+                }
+
+                // 找到句子结束符且位置不太靠前（至少保留一半长度）
+                if (bestEnd > maxLength / 2) {
+                    end = start + bestEnd + 1;
+                } else {
+                    // 尝试在空格处截断
+                    int lastSpace = chunk.lastIndexOf(' ');
+                    if (lastSpace > maxLength * 2 / 3) {
+                        end = start + lastSpace;
+                    }
+                    // 否则直接在 maxLength 处截断
+                }
+            }
+
+            String segment = text.substring(start, end).trim();
+            if (!segment.isEmpty()) {
+                segments.add(segment);
+            }
+            start = end;
+        }
+
+        log.info("长文本分段完成，原文{}字，分为{}段", text.length(), segments.size());
+        return segments;
+    }
+
+    /**
+     * 依次合成多段文本并合并音频
+     */
+    private Mono<byte[]> synthesizeAndMergeSegments(List<String> segments, String voice, double speed) {
+        Mono<byte[]> result = synthesizeSingleSegment(segments.get(0), voice, speed);
+
+        for (int i = 1; i < segments.size(); i++) {
+            final int index = i;
+            result = result.flatMap(prevAudio ->
+                    synthesizeSingleSegment(segments.get(index), voice, speed)
+                            .map(nextAudio -> {
+                                // 合并前一段和当前段的音频
+                                List<byte[]> toMerge = new ArrayList<>();
+                                toMerge.add(prevAudio);
+                                toMerge.add(nextAudio);
+                                byte[] merged = com.treepeople.leapmindtts.util.WavMergeUtil.mergeWavSegments(toMerge);
+                                log.debug("音频合并完成，段 {}/{}", index + 1, segments.size());
+                                return merged;
+                            })
+            );
+        }
+
+        return result.doOnSuccess(audioData ->
+                log.info("分段合成并合并完成，共{}段，总音频大小: {} bytes", segments.size(), audioData.length));
+    }
+
+
+    /**
+     * 智能截断文本（已废弃，保留用于向后兼容）
      * 尽量在句子结束符处截断，保持文本的完整性和可读性
      *
      * @param text 原始文本
      * @param maxLength 最大长度
      * @return 截断后的文本
      */
+    @SuppressWarnings("unused")
     private String smartTruncateText(String text, int maxLength) {
         if (text == null || text.length() <= maxLength) {
             return text;

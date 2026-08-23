@@ -874,10 +874,13 @@ export async function getKnowledgePointDetail(userId, knowledgePointId) {
   const reminderSource = resultPayload(reminderResult);
   const pointSource = findKnowledgePoint(knowledgeSource, normalizedPointId);
 
-  // 后端返回 NOT_READY 或知识点不存在时，返回带标记的 demo 数据
+  // 后端返回 NOT_READY、知识点不存在、或 kpId 非数字（演示树字符串 ID）时，
+  // 后端 /knowledge-status 只接受数字 kpId；字符串 ID 请求必然失败。
+  // 统一标记 isNotReady（画像构建中），而不是 isDemo（联调示例数据）。
   if (!pointSource) {
     const profileStatus = String(knowledgeSource?.profileStatus || '').toUpperCase();
-    if (profileStatus === 'NOT_READY') {
+    const numericKpId = /^\d+$/.test(normalizedPointId);
+    if (profileStatus === 'NOT_READY' || !numericKpId || !requestSucceeded(knowledgeResult)) {
       return { ...demo, isNotReady: true, demoReason: '\u5b66\u4e60\u753b\u50cf\u6b63\u5728\u6784\u5efa\u4e2d\u3002' };
     }
     return demo;

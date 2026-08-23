@@ -1,5 +1,7 @@
 package com.treepeople.leapmindtts.controller.admin;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.treepeople.leapmindtts.annotation.AdminRequired;
 import com.treepeople.leapmindtts.pojo.dto.AdminReviewRequest;
 import com.treepeople.leapmindtts.pojo.dto.BulkSynthesisResponse;
 import com.treepeople.leapmindtts.pojo.dto.ReviewResponse;
@@ -10,17 +12,14 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Controller;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 /**
  * 管理后台 - 审核管理控制器
  */
-@Controller
-@RequestMapping("api/admin/review")
+@RestController
+@RequestMapping("/api/admin/review")
 @RequiredArgsConstructor
 @Slf4j
 @Validated
@@ -29,15 +28,17 @@ public class AdminReviewController {
     private final BulkSpeechService bulkSpeechService;
 
     /**
-     * 获取待审核的会话列表 (API)
+     * 获取待审核的会话列表 (API，分页)
      */
-    @GetMapping("/api/pending-sessions")
-    @ResponseBody
-    public ResponseEntity<List<LessonSession>> getPendingSessions() {
-        log.info("管理后台获取待审核会话列表");
+    @GetMapping("/pending-sessions")
+    @AdminRequired
+    public ResponseEntity<IPage<LessonSession>> getPendingSessions(
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "10") long size) {
+        log.info("管理后台获取待审核会话列表，页码: {}, 每页: {}", page, size);
 
         try {
-            List<LessonSession> pendingSessions = bulkSpeechService.getPendingReviewSessions();
+            IPage<LessonSession> pendingSessions = bulkSpeechService.getSessionsByStatusPage("PENDING_REVIEW", page, size);
             return ResponseEntity.ok(pendingSessions);
         } catch (Exception e) {
             log.error("管理后台获取待审核会话列表失败", e);
@@ -48,8 +49,8 @@ public class AdminReviewController {
     /**
      * 根据courId获取待审核的会话列表 (API)
      */
-    @GetMapping("/api/pending-sessions/{courseId}")
-    @ResponseBody
+    @GetMapping("/pending-sessions/{courseId}")
+    @AdminRequired
     public ResponseEntity<LessonSession> getPendingSessionsByCourseId(@PathVariable @NotBlank String courseId) {
         log.info("管理后台获取待审核会话:{}",courseId);
 
@@ -96,8 +97,8 @@ public class AdminReviewController {
     /**
      * 管理员高级审核会话 (API) - 支持修改润色文本和其他属性
      */
-    @PostMapping("/api/sessions/{courseId}/admin-review")
-    @ResponseBody
+    @PostMapping("/sessions/{courseId}/admin-review")
+    @AdminRequired
     public ResponseEntity<ReviewResponse> adminReviewSession(
             @PathVariable @NotBlank String courseId,
             @Valid @RequestBody AdminReviewRequest request) {
@@ -125,8 +126,8 @@ public class AdminReviewController {
     /**
      * 执行批量语音合成 (API)
      */
-    @PostMapping("/api/sessions/{courseId}/synthesize")
-    @ResponseBody
+    @PostMapping("/sessions/{courseId}/synthesize")
+    @AdminRequired
     public ResponseEntity<BulkSynthesisResponse> executeSynthesis(@PathVariable @NotBlank String courseId) {
         log.info("管理后台执行批量语音合成，会话ID: {}", courseId);
 
@@ -146,20 +147,18 @@ public class AdminReviewController {
     }
 
     /**
-     * 获取所有状态的会话列表 (API)
+     * 获取所有状态的会话列表 (API，分页)
      */
-    @GetMapping("/api/sessions")
-    @ResponseBody
-    public ResponseEntity<List<LessonSession>> getAllSessions(@RequestParam(required = false) String status) {
-        log.info("管理后台获取会话列表，状态过滤: {}", status);
+    @GetMapping("/sessions")
+    @AdminRequired
+    public ResponseEntity<IPage<LessonSession>> getAllSessions(
+            @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "10") long size) {
+        log.info("管理后台获取会话列表，状态过滤: {}, 页码: {}, 每页: {}", status, page, size);
 
         try {
-            List<LessonSession> sessions;
-            if (status != null && !status.trim().isEmpty()) {
-                sessions = bulkSpeechService.getSessionsByStatus(status);
-            } else {
-                sessions = bulkSpeechService.getSessionsByStatus(null);
-            }
+            IPage<LessonSession> sessions = bulkSpeechService.getSessionsByStatusPage(status, page, size);
             return ResponseEntity.ok(sessions);
         } catch (Exception e) {
             log.error("管理后台获取会话列表失败", e);
