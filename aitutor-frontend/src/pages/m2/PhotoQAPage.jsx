@@ -4,7 +4,7 @@ import CameraCapture from '../../components/m2/CameraCapture'
 import ImageUploader from '../../components/m2/ImageUploader'
 import OCRResultCard from '../../components/m2/OCRResultCard'
 import QAResultPanel from '../../components/m2/QAResultPanel'
-import { mockRecognizeQuestion, mockMatchQuestion } from '../../services/m2'
+import { recognizeQuestion, matchQuestion } from '../../services/m2'
 
 const scrollbarStyles = `
   .photo-qa-scroll::-webkit-scrollbar { width: 4px; }
@@ -37,12 +37,16 @@ export default function PhotoQAPage({ onBack, onExplain }) {
     setCropBox(null)
     setMatchResult(null)
     try {
-      const result = await mockRecognizeQuestion(image)
-      setOcrResult(result)
+      const result = await recognizeQuestion(image)
+      const stem = (result.text || '').trim()
+      // 后端 OCR 仅返回识别文本，前端构建结构化题目（无结构化字段时用户可自行编辑）
+      const structuredQuestion = { stem, options: [], subject: 'math', type: 'single_choice' }
+      setOcrResult({ ocrRecordId: result.ocrRecordId || null, recognizedText: stem, structuredQuestion, confidence: result.confidence || 1 })
       // 同时匹配题库
-      const matched = await mockMatchQuestion(result.structuredQuestion.stem, result.structuredQuestion.subject)
-      setMatchResult(matched)
+      const matched = await matchQuestion(stem, 'math', 'single_choice')
+      setMatchResult(matched || { matched: false })
     } catch (err) {
+      console.error('OCR 识别失败:', err)
       setError('OCR 识别失败，请重试')
     }
     setLoading(false)

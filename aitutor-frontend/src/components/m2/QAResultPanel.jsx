@@ -4,7 +4,7 @@ import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import 'katex/dist/katex.min.css'
 import { Sparkles, ThumbsUp, HelpCircle, BookOpen, BookmarkPlus, BookmarkCheck, Send } from 'lucide-react'
-import { mockPhotoQA, mockAddToWrongBook } from '../../services/m2'
+import { photoQA, addToWrongBook } from '../../services/m2'
 import { useChatSession } from '../../hooks/useChatSession'
 import { getUserInfo } from '../../utils/tokenManager'
 
@@ -33,9 +33,8 @@ export default function QAResultPanel({ ocrRecordId, question, onKnowledgePointC
     setKnowledgePoints([])
     setSimilarQuestions([])
 
-    await mockPhotoQA(
-      ocrRecordId,
-      question,
+    await photoQA(
+      { userId, ocrRecordId, question },
       (chunk) => {
         if (chunk.type === 'done') {
           setDone(true)
@@ -65,7 +64,7 @@ export default function QAResultPanel({ ocrRecordId, question, onKnowledgePointC
 
   const handleAddToWrongBook = async () => {
     setAddingToWrong(true)
-    await mockAddToWrongBook(ocrRecordId)
+    await addToWrongBook(ocrRecordId)
     setInWrongBook(true)
     setAddingToWrong(false)
   }

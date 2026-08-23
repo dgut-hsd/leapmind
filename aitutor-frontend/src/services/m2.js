@@ -6,18 +6,17 @@ import { post, get, del } from './api'
 
 /**
  * OCR 识别题目
- * 对接人：王圳 - POST /api/ocr/recognize-question
- * 文档：M2_接口文档.md 接口4
- * 响应 ApiResponse: { code, message, data: { ocrRecordId, structuredQuestion, confidence }, timestamp }
+ * POST /api/ocr/recognize
+ * 响应 Result: { code, msg, data: { text, wordsCount, direction, provider, costTime } }
  */
 export async function recognizeQuestion(image, subject) {
   const formData = new FormData()
   formData.append('file', image)
   if (subject) formData.append('subject', subject)
-  const res = await fetch('/api/ocr/recognize-question', { method: 'POST', body: formData })
+  const res = await fetch('/api/ocr/recognize', { method: 'POST', body: formData })
   const json = await res.json()
-  if (json.code === 200) return json.data
-  throw new Error(json.message || 'OCR 识别失败')
+  if (json.code === 200 && json.data) return json.data
+  throw new Error(json.msg || json.message || 'OCR 识别失败')
 }
 
 /**
@@ -107,15 +106,32 @@ export async function matchQuestion(stem, subject, type) {
 
 /**
  * 获取错题列表
- * 对接人：杜恩泽（M1 Java）- GET /api/wrong-questions
- * 文档：wrong-questions-api.ts
- * 查询参数: { status?, chapter?, knowledgePoint? }
- * 返回 ApiResponse → data: WrongQuestion[]
+ * GET /api/wrong-questions
+ * 返回 ApiResponse → data: WrongQuestion[] → 适配前端 { items, total }
  */
 export async function getWrongQuestions(params = {}) {
   const query = new URLSearchParams(params).toString()
   const res = await fetch(`/api/wrong-questions${query ? `?${query}` : ''}`)
-  return res.json()
+  const json = await res.json()
+  const list = Array.isArray(json.data) ? json.data : (json.data?.records || [])
+  return {
+    total: list.length,
+    items: list.map(wq => ({
+      id: wq.id,
+      questionId: wq.questionId,
+      questionContent: {
+        stem: wq.content || wq.questionTitle || '',
+        options: [],
+        type: wq.questionType || 'single_choice',
+      },
+      userAnswer: wq.userAnswer ? { selected: wq.userAnswer } : { selected: '' },
+      correctAnswer: wq.correctAnswer || '',
+      wrongReasonTag: wq.wrongReasonTag || '',
+      knowledgePoints: wq.knowledgePoint ? [{ id: 0, name: wq.knowledgePoint }] : [],
+      createdAt: wq.lastWrongAt || '',
+      status: wq.status || 'unresolved',
+    })),
+  }
 }
 
 /**
@@ -141,20 +157,50 @@ export async function submitAnswer(data) {
 
 /**
  * 获取讲题历史列表
- * 对接人：王圳（M2 Java）- GET /api/explain/history
+ * GET /api/explain/history
+ * 返回 Result<IPage<TeachingContents>> → 适配前端 { items, total }
  */
 export async function getExplainHistory(page, size) {
   const res = await fetch(`/api/explain/history?page=${page}&size=${size}`)
-  return res.json()
+  const json = await res.json()
+  const pageData = json.data || {}
+  const list = pageData.records || pageData.list || []
+  return {
+    items: list.map(it => ({
+      id: it.explainId,
+      subject: 'math',
+      questionSummary: it.questionText || '',
+      knowledgePoints: [],
+      createdAt: it.createTime || '',
+    })),
+    total: pageData.total || 0,
+    page,
+    size,
+  }
 }
 
 /**
  * 获取讲题详情（回放）
- * 对接人：王圳（M2 Java）- GET /api/explain/{explainId}
+ * GET /api/explain/{explainId}
+ * 返回 Result<TeachingContents> → 适配前端回放结构
  */
 export async function getExplainDetail(explainId) {
   const res = await fetch(`/api/explain/${explainId}`)
-  return res.json()
+  const json = await res.json()
+  const d = json.data || {}
+  return {
+    id: d.explainId,
+    questionContent: { stem: d.questionText || '', options: [], type: 'single_choice' },
+    userAnswer: { selected: '' },
+    correctAnswer: '',
+    wrongReasonTag: '',
+    knowledgePoints: [],
+    steps: [],
+    tip: '',
+    answer: d.aiAnswer || '',
+    explanation: d.aiExplain || '',
+    createdAt: d.createTime || '',
+  }
 }
 
 /**

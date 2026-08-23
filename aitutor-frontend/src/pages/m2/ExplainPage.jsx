@@ -7,7 +7,8 @@ import StepProgress from '../../components/m2/StepProgress'
 import ExplainContent from '../../components/m2/ExplainContent'
 import VoicePlayButton from '../../components/m2/VoicePlayButton'
 import AskMoreButton from '../../components/m2/AskMoreButton'
-import { mockGenerateExplain, mockGetWrongQuestions, mockGetExplainDetail } from '../../services/m2'
+import { generateExplain, getWrongQuestions, getExplainDetail } from '../../services/m2'
+import { getUserInfo } from '../../utils/tokenManager'
 
 const scrollbarStyles = `
   .explain-scroll::-webkit-scrollbar { width: 4px; }
@@ -101,6 +102,7 @@ function QuestionCard({ question, expanded, onToggle, onKnowledgePointClick }) {
 }
 
 export default function ExplainPage({ onBack, replayId, onExplainHistory }) {
+  const userId = getUserInfo()?.userId || 1
   const [wrongQuestions, setWrongQuestions] = useState([])
   const [selectedQuestion, setSelectedQuestion] = useState(null)
   const [questionExpanded, setQuestionExpanded] = useState(true)
@@ -124,7 +126,7 @@ export default function ExplainPage({ onBack, replayId, onExplainHistory }) {
     if (!replayId) return
     const loadReplay = async () => {
       setReplayLoading(true)
-      const data = await mockGetExplainDetail(replayId)
+      const data = await getExplainDetail(replayId)
       setReplayData(data)
       setSelectedQuestion({
         id: data.id,
@@ -151,7 +153,7 @@ export default function ExplainPage({ onBack, replayId, onExplainHistory }) {
 
   useEffect(() => {
     const loadQuestions = async () => {
-      const data = await mockGetWrongQuestions()
+      const data = await getWrongQuestions()
       setWrongQuestions(data.items || [])
     }
     loadQuestions()
@@ -189,8 +191,9 @@ export default function ExplainPage({ onBack, replayId, onExplainHistory }) {
 
     const steps = []
 
-    await mockGenerateExplain(
+    await generateExplain(
       {
+        userId,
         wrongQuestionId: selectedQuestion.id,
         userAnswer: selectedQuestion.userAnswer,
         correctAnswer: selectedQuestion.correctAnswer,

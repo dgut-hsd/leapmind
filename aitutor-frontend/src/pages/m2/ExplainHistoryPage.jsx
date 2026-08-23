@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ArrowLeft, Sparkles, Clock } from 'lucide-react'
 import ExplainHistoryList from '../../components/m2/ExplainHistoryList'
-import { mockGetExplainHistory, mockDeleteExplain } from '../../services/m2'
+import { getExplainHistory, deleteExplain } from '../../services/m2'
 
 const scrollbarStyles = `
   .history-scroll::-webkit-scrollbar { width: 4px; }
@@ -20,7 +20,7 @@ export default function ExplainHistoryPage({ onBack, onReplay }) {
 
   const loadData = async (p) => {
     setLoading(true)
-    const data = await mockGetExplainHistory(p, pageSize)
+    const data = await getExplainHistory(p, pageSize)
     setItems(data.items)
     setTotal(data.total)
     setLoading(false)
@@ -30,7 +30,7 @@ export default function ExplainHistoryPage({ onBack, onReplay }) {
 
   const handleDelete = async (id) => {
     setDeleting(id)
-    await mockDeleteExplain(id)
+    await deleteExplain(id)
     setItems(prev => prev.filter(i => i.id !== id))
     setTotal(prev => prev - 1)
     setDeleting(null)
