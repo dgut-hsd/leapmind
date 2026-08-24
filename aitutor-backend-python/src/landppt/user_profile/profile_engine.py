@@ -26,7 +26,7 @@ from .models import (
   UserProfileResult,
 )
 
-PROFILE_ENGINE_ALGORITHM_VERSION = "profile-engine-v1"
+PROFILE_ENGINE_ALGORITHM_VERSION = "profile-engine-v2"
 CONFUSION_TEXT_EXCERPT_LIMIT = 80
 
 
@@ -168,6 +168,7 @@ def _extractConfusionPoints(
           occurredAt=event.occurredAt,
           matchedPatterns=extraction.matchedPatterns,
           textExcerpt=_truncateText(extraction.normalizedText),
+          confidence=extraction.confidence,
         ),
       )
 

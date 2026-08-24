@@ -8,7 +8,7 @@
  */
 
 import { mockParseResult, mockPPTStructure, mockGenerationEvents, mockHistoryList } from '../data/mockLecture';
-import { get, post, request } from './api';
+import { get, request } from './api';
 
 // ─── 模式开关 ──────────────────────────────────────
 
@@ -19,7 +19,7 @@ const USE_MOCK = import.meta.env.VITE_LECTURE_MOCK !== 'false';
 
 /**
  * 上传文件并解析内容
- * POST /api/lecture/parse-file (multipart/form-data)
+ * POST /api/teaching/{courseId}/upload (multipart/form-data)
  * 
  * @param {File} file - 上传的文件
  * @param {number} userId
@@ -32,12 +32,12 @@ export async function parseLectureFile(file, userId) {
     return { ...mockParseResult };
   }
 
-  // TODO-REAL: 真实 multipart 上传
+  // TODO-REAL: 真实 multipart 上传（对接 M4 后端 /api/teaching/{courseId}/upload）
   const formData = new FormData();
   formData.append('file', file);
   formData.append('userId', String(userId));
 
-  return request('/api/lecture/parse-file', {
+  return request(`/api/teaching/${encodeURIComponent(String(userId))}/upload`, {
     method: 'POST',
     body: formData,
     headers: {}, // 让浏览器自动设置 Content-Type: multipart/form-data
@@ -48,7 +48,7 @@ export async function parseLectureFile(file, userId) {
 
 /**
  * 生成讲课内容（SSE 流式）
- * POST /api/lecture/generate → SSE
+ * POST /api/teaching/{courseId}/stream-generate → SSE
  * 
  * @param {Object} params
  * @param {number} params.userId
@@ -87,11 +87,12 @@ export async function generateLecture(params, onEvent) {
     };
   }
 
-  // TODO-REAL: 真实 SSE 流式调用
-  const response = await fetch('/api/lecture/generate', {
+  // TODO-REAL: 真实 SSE 流式调用（对接 M4 后端 /api/teaching/{courseId}/stream-generate）
+  const courseId = params.courseId || params.sourceId || String(params.userId || '');
+  const response = await fetch(`/api/teaching/${encodeURIComponent(courseId)}/stream-generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
+    body: JSON.stringify({ source_text: params.textContent || '', user_profile: {} }),
   });
 
   const reader = response.body.getReader();
@@ -123,19 +124,19 @@ export async function generateLecture(params, onEvent) {
 
 /**
  * 获取讲课内容列表
- * GET /api/lecture/contents
+ * GET /api/teaching/list
  */
 export async function getLectureList(userId, { page = 1, size = 20 } = {}) {
   if (USE_MOCK) {
     await new Promise(r => setTimeout(r, 500));
     return { total: mockHistoryList.length, items: mockHistoryList };
   }
-  return get(`/api/lecture/contents?userId=${userId}&page=${page}&size=${size}`);
+  return get(`/api/teaching/list?page=${page}&pageSize=${size}`);
 }
 
 /**
  * 获取讲课内容详情（含完整 PPT 结构）
- * GET /api/lecture/contents/{lectureId}
+ * GET /api/teaching/{courseId}
  */
 export async function getLectureDetail(lectureId) {
   if (USE_MOCK) {
@@ -145,12 +146,12 @@ export async function getLectureDetail(lectureId) {
       ? { ...item, pptStructure: mockPPTStructure }
       : null;
   }
-  return get(`/api/lecture/contents/${lectureId}`);
+  return get(`/api/teaching/${encodeURIComponent(String(lectureId))}`);
 }
 
 /**
  * 删除讲课内容
- * DELETE /api/lecture/contents/{lectureId}
+ * DELETE /api/teaching/{courseId}
  */
 export async function deleteLecture(lectureId) {
   if (USE_MOCK) {
@@ -159,17 +160,12 @@ export async function deleteLecture(lectureId) {
     if (idx !== -1) mockHistoryList.splice(idx, 1);
     return { success: true };
   }
-  return request(`/api/lecture/contents/${lectureId}`, { method: 'DELETE' });
+  return request(`/api/teaching/${encodeURIComponent(String(lectureId))}`, { method: 'DELETE' });
 }
 
 /**
- * 发布讲课内容
- * POST /api/lecture/contents/{lectureId}/publish
+ * 发布讲课内容（后端 M4 无独立 publish 接口，统一走 /api/teaching/{courseId}）
+ * 已废弃：讲课内容创建后即为可用状态，无需单独发布。
  */
-export async function publishLecture(lectureId) {
-  if (USE_MOCK) {
-    await new Promise(r => setTimeout(r, 300));
-    return { success: true };
-  }
-  return post(`/api/lecture/contents/${lectureId}/publish`);
-}
+// publishLecture 已移除 —— 后端 /api/teaching 无对应 publish 端点
+

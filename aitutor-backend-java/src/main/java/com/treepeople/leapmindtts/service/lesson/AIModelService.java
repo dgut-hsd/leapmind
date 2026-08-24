@@ -88,6 +88,10 @@ public class AIModelService {
                 .bodyValue(request)
                 .retrieve()
                 .bodyToMono(DashScopeResponse.class)
+                .timeout(Duration.ofSeconds(30))
+                .retryWhen(Retry.backoff(2, Duration.ofSeconds(1))
+                        .filter(error -> !(error instanceof WebClientResponseException))
+                        .doBeforeRetry(retrySignal -> log.warn("AI请求第{}次重试: {}", retrySignal.totalRetries() + 1, retrySignal.failure().getMessage())))
                 .map(response -> {
                     if (response != null && response.getOutput() != null && response.getOutput().getText() != null) {
                         String content = response.getOutput().getText();

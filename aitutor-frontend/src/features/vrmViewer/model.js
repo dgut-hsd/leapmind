@@ -157,6 +157,10 @@ export class Model {
         resolve(true);
       });
     });
+
+    // 音频结束后清除口型数据，防止嘴型卡在张开状态
+    this.emoteController?.lipSync('aa', 0);
+    this.emoteController?.lipSyncWeights({ aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 });
   }
 
   /**
@@ -223,11 +227,11 @@ export class Model {
 
   update(delta) {
     if (this._lipSync) {
-      const { volume, weights } = this._lipSync.update();
+      const { volume, weights, active } = this._lipSync.update();
       if (weights) {
         this.emoteController?.lipSyncWeights(weights);
-      } else {
-        // 回退：至少用音量驱动 aa
+      } else if (active || volume > 0) {
+        // 仅在活跃或有残余音量时驱动，避免音频结束后反复写入残留值
         this.emoteController?.lipSync("aa", volume);
       }
     }

@@ -57,7 +57,9 @@ asr:
 ai:
   api:
     key: ${AI_API_KEY:}
-  prompt: '你是一个聪明且体贴的老师，请简洁的回答以下这个问题，回答完后需要加入"还有其他问题欢迎继续问我呀。”'
+  prompt: '你是一个聪明且体贴的老师，请简洁的回答以下这个问题，回答完后需要加入"还有其他问题欢迎继续问我呀。"'
+  teaching:
+    service-url: ${AI_TEACHING_SERVICE_URL:http://localhost:8000}
 
 # 阿里云TTS配置
 tts:
@@ -232,6 +234,35 @@ virtual-teacher:
     access-key: ${MINIO_ACCESS_KEY:minioadmin}
     secret-key: ${MINIO_SECRET_KEY:minioadmin}
     bucket: ${MINIO_BUCKET:leapmind-tts}
+
+# M2 拍照搜题 MinIO 配置（MinioConfig 绑定 minio.*）
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  access-key: ${MINIO_ACCESS_KEY:minioadmin}
+  secret-key: ${MINIO_SECRET_KEY:minioadmin}
+  bucket-name: ${MINIO_BUCKET:leapmind-tts}
+  # M4 即时讲课专用桶（与公共 bucket 隔离）
+  teaching-bucket: ${MINIO_TEACHING_BUCKET:leapmind-teaching}
+
+# M2 OCR 配置（provider: baidu / aliyun）
+ocr:
+  provider: ${OCR_PROVIDER:aliyun}
+  baidu:
+    app-id: ${BAIDU_OCR_APP_ID:}
+    api-key: ${BAIDU_OCR_API_KEY:}
+    secret-key: ${BAIDU_OCR_SECRET_KEY:}
+  aliyun:
+    app-code: ${ALIYUN_OCR_APP_CODE:}
+    api-url: ${ALIYUN_OCR_API_URL:https://api.aliyun.com/v1/ocr}
+
+# 批量语音合成（BulkSpeech）
+bulk-speech:
+  cache:
+    enabled: ${BULK_SPEECH_CACHE_ENABLED:true}
+  rate-limit:
+    enabled: ${BULK_SPEECH_RATE_LIMIT_ENABLED:true}
+    requests-per-minute: ${BULK_SPEECH_REQUESTS_PER_MINUTE:30}
+    daily-characters: ${BULK_SPEECH_DAILY_CHARACTERS:50000}
 
 # Python AI 服务配置（复习计算、事件处理）
 python-service:

@@ -30,9 +30,16 @@ public class VoiceDatabaseServiceImpl implements VoiceDatabaseService {
     @Transactional(rollbackFor = Exception.class)
     public boolean createCompleteSession(String courseId, String title, String originalText,
                                        String polishedText, List<AudioSegment> segments) {
+        return createCompleteSession(courseId, title, originalText, polishedText, segments, null);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean createCompleteSession(String courseId, String title, String originalText,
+                                       String polishedText, List<AudioSegment> segments, Long userId) {
         try {
             // 1. 创建会话记录
-            boolean sessionCreated = lessonSessionService.createSession(courseId, title, originalText, polishedText);
+            boolean sessionCreated = lessonSessionService.createSession(courseId, title, originalText, polishedText, userId);
             if (!sessionCreated) {
                 log.error("创建会话记录失败，会话ID: {}", courseId);
                 return false;
@@ -349,6 +356,11 @@ public class VoiceDatabaseServiceImpl implements VoiceDatabaseService {
             log.error("查询会话失败，状态: {}", status, e);
             return List.of();
         }
+    }
+
+    @Override
+    public com.baomidou.mybatisplus.core.metadata.IPage<LessonSession> getSessionsByStatusPage(String status, long page, long size) {
+        return lessonSessionService.getSessionsByStatusPage(status, page, size);
     }
 
     @Override

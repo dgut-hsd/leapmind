@@ -10,6 +10,7 @@ import com.treepeople.leapmindtts.config.VirtualTeacherProperties;
 import com.treepeople.leapmindtts.service.lesson.AliyunTokenService;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -88,6 +89,7 @@ public class VirtualTeacherStreamingTtsClient {
     private static final int PROVIDER_DRIVER_WORKERS = 2;
     private final ThreadPoolExecutor providerDriverExecutor;
 
+    @Autowired
     public VirtualTeacherStreamingTtsClient(
             AliyunTokenService tokenService,
             VirtualTeacherProperties properties) {

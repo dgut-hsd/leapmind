@@ -1,19 +1,25 @@
-"""多源学习事件汇总服务。"""
+"""多源学习事件汇总服务。
+
+v2 升级：掌握度计算集成贝叶斯 Beta-Binomial 后验和 Wilson 置信区间，
+使评估对小样本更鲁棒，并提供可解释的置信度度量。
+"""
 
 from collections.abc import Iterable
 
+from .confidence import bayesianPosteriorMean, determineTrend, wilsonConfidence
 from .models import (
   AggregationResult,
   EventSource,
   KnowledgeEvidence,
   KnowledgeMastery,
   LearningEvent,
+  MasteryTrend,
   ProfileStatus,
 )
 
 MINIMUM_ANSWER_COUNT = 10
 MASTERY_THRESHOLD = 0.8
-MASTERY_ALGORITHM_VERSION = "mastery-rule-v1"
+MASTERY_ALGORITHM_VERSION = "mastery-bayesian-v2"
 
 
 def aggregateUserEvents(
@@ -85,8 +91,22 @@ def _updateEvidence(
 
 def calculateMastery(
   evidence: KnowledgeEvidence,
+  previousBayesianScore: float | None = None,
 ) -> KnowledgeMastery:
-  """根据答题样本量和正确率计算知识点掌握状态。"""
+  """根据答题样本量和正确率计算知识点掌握状态。
+
+  v2 升级：
+  - 集成贝叶斯 Beta(2,2) 先验的后验均值，对小样本收缩更鲁棒
+  - 计算 Wilson 得分区间置信度，量化评估可靠性
+  - 对比历史后验均值判定掌握趋势（IMPROVING / STABLE / DECLINING）
+
+  Args:
+    evidence: 知识点证据汇总
+    previousBayesianScore: 上一版本画像的贝叶斯后验均值（首次计算时为 None）
+
+  Returns:
+    包含贝叶斯评分、置信度和趋势的 KnowledgeMastery
+  """
   if evidence.answerCount < 0 or evidence.correctAnswerCount < 0:
     raise ValueError("答题统计不能为负数")
   if evidence.correctAnswerCount > evidence.answerCount:
@@ -97,6 +117,22 @@ def calculateMastery(
     if evidence.answerCount
     else 0.0
   )
+
+  # v2：贝叶斯后验均值（Beta(2,2) 先验）
+  bayesianScore = bayesianPosteriorMean(
+    evidence.correctAnswerCount,
+    evidence.answerCount,
+  )
+
+  # v2：Wilson 置信度
+  confidence = wilsonConfidence(
+    evidence.correctAnswerCount,
+    evidence.answerCount,
+  )
+
+  # v2：趋势判定
+  trend = determineTrend(bayesianScore, previousBayesianScore)
+
   if evidence.answerCount <= MINIMUM_ANSWER_COUNT:
     status = ProfileStatus.INSUFFICIENT_DATA
   elif correctRate > MASTERY_THRESHOLD:
@@ -112,4 +148,7 @@ def calculateMastery(
     minimumAnswerCount=MINIMUM_ANSWER_COUNT,
     masteryThreshold=MASTERY_THRESHOLD,
     algorithmVersion=MASTERY_ALGORITHM_VERSION,
+    bayesianScore=round(bayesianScore, 4),
+    confidence=confidence,
+    trend=MasteryTrend(trend) if trend else None,
   )

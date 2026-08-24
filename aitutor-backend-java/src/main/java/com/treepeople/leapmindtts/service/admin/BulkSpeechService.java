@@ -1,5 +1,6 @@
 package com.treepeople.leapmindtts.service.admin;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.treepeople.leapmindtts.pojo.dto.*;
 import com.treepeople.leapmindtts.pojo.entity.LessonSession;
 import jakarta.validation.constraints.NotBlank;
@@ -18,6 +19,15 @@ public interface BulkSpeechService {
      * @return 合成结果响应
      */
     BulkSynthesisResponse processBulkSynthesis(BulkSynthesisRequest request);
+
+    /**
+     * 处理批量语音合成请求（带归属用户ID，用于权限校验）
+     *
+     * @param request 批量合成请求
+     * @param userId  请求用户ID
+     * @return 合成结果响应
+     */
+    BulkSynthesisResponse processBulkSynthesis(BulkSynthesisRequest request, Long userId);
 
     /**
      * 获取指定页面的所有音频片段
@@ -55,6 +65,15 @@ public interface BulkSpeechService {
     BulkPreprocessingResponse processBulkPreprocessing(BulkSynthesisRequest request);
 
     /**
+     * 批量文本预处理（带归属用户ID，用于权限校验）
+     *
+     * @param request 批量合成请求
+     * @param userId  请求用户ID
+     * @return 预处理结果响应
+     */
+    BulkPreprocessingResponse processBulkPreprocessing(BulkSynthesisRequest request, Long userId);
+
+    /**
      * 执行批量语音合成（基于已预处理的文本）
      *
      * @param courseId 会话ID
@@ -76,6 +95,16 @@ public interface BulkSpeechService {
      * @return 会话列表
      */
     List<LessonSession> getSessionsByStatus(String status);
+
+    /**
+     * 分页获取会话列表
+     *
+     * @param status 状态过滤条件，为空则返回所有会话
+     * @param page 页码（从1开始）
+     * @param size 每页大小
+     * @return 分页结果
+     */
+    IPage<LessonSession> getSessionsByStatusPage(String status, long page, long size);
 
     /**
      * 审核会话

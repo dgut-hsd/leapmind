@@ -226,8 +226,12 @@ export default function TeacherAvatarPage({ courseId = '', onBack }) {
     if (!text) return;
     setSpeechState('speaking');
     setDemoState(label);
-    viewer?.model?.emoteController?.playEmotion('happy');
-    viewer?.model?.emoteController?.playHeadMotion('smallNod');
+
+    const emote = viewer?.model?.emoteController;
+    if (emote) {
+      emote.playEmotion('happy');
+      emote.playHeadMotion('smallNod');
+    }
 
     try {
       const result = await synthesizeVirtualTeacherSpeech({
@@ -235,18 +239,41 @@ export default function TeacherAvatarPage({ courseId = '', onBack }) {
         text,
         voiceType: selected?.voiceType,
       });
-      if (result?.audioBlob) {
-        const audio = new Audio(URL.createObjectURL(result.audioBlob));
-        audio.onended = () => setSpeechState('idle');
-        audio.onerror = () => setSpeechState('idle');
-        await audio.play();
+      if (result?.audioBlob && result.audioBlob.size > 0) {
+        const model = viewer?.model;
+        if (model) {
+          // 通过 WebAudio 播放并驱动口型同步
+          const arrayBuffer = await result.audioBlob.arrayBuffer();
+          await model.speak(arrayBuffer, {
+            expression: 'happy',
+            talk: { message: text },
+          });
+          setSpeechState('idle');
+        } else {
+          // 3D 模型未加载，直接播放音频
+          const audioUrl = URL.createObjectURL(result.audioBlob);
+          const audio = new Audio(audioUrl);
+          audio.onended = () => {
+            URL.revokeObjectURL(audioUrl);
+            setSpeechState('idle');
+          };
+          audio.onerror = () => {
+            URL.revokeObjectURL(audioUrl);
+            setSpeechState('idle');
+          };
+          await audio.play();
+        }
       } else {
+        setMessages((prev) => [
+          ...prev,
+          { role: 'system', text: '语音合成返回空音频，请稍后重试。' },
+        ]);
         window.setTimeout(() => setSpeechState('idle'), 1400);
       }
-    } catch {
+    } catch (error) {
       setMessages((prev) => [
         ...prev,
-        { role: 'system', text: '语音接口暂时不可用，已保留 3D 教师动作演示。' },
+        { role: 'system', text: error?.message || '语音接口暂时不可用，已保留 3D 教师动作演示。' },
       ]);
       window.setTimeout(() => setSpeechState('idle'), 1400);
     } finally {
@@ -399,277 +426,165 @@ export default function TeacherAvatarPage({ courseId = '', onBack }) {
               <ArrowLeft size={21} />
             </button>
             <div>
-              <p className="text-sm font-semibold tracking-wider text-purple-200">M8 · 虚拟 AI 教师</p>
               <h1 className="text-2xl font-black sm:text-3xl">选择你的大学生助教</h1>
             </div>
           </div>
-          <div className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm text-purple-100 backdrop-blur-xl">
-            VRM 3D · 口型同步 · 表情动画
-          </div>
         </header>
 
-        <section className="relative left-1/2 w-[calc(100vw-2.5rem)] max-w-[1500px] -translate-x-1/2 sm:w-[calc(100vw-4rem)]">
-          <div className="relative h-[76vh] min-h-[620px] max-h-[840px] overflow-hidden rounded-[32px] border border-white/20 bg-gradient-to-b from-white/15 to-indigo-950/25 shadow-2xl backdrop-blur-xl">
-            <div className="absolute left-6 top-6 z-10 max-w-xs rounded-2xl border border-white/15 bg-indigo-950/35 p-4 backdrop-blur-xl">
-              <div className="mb-1 flex items-center gap-2 text-xl font-black">
-                <Sparkles size={18} className="text-amber-300" />
-                {selected?.name}
-              </div>
-              <p className="text-sm leading-6 text-purple-100/80">{selected?.description}</p>
-            </div>
-            {selected?.modelUrl && (
-              <VirtualTeacherViewer
-                key={selected.id}
-                modelUrl={selected.modelUrl}
-                teachingSlide={teachingSlide}
-                onReady={handleViewerReady}
-              />
-            )}
-            <button
-              type="button"
-              onClick={() => setShowAvatarPanel(true)}
-              className="absolute right-6 top-6 z-10 inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-indigo-950/45 px-4 py-2.5 text-sm font-bold text-white shadow-lg backdrop-blur-xl transition hover:bg-indigo-900/70"
-            >
-              <UserRound size={17} />
-              教师形象
-            </button>
-            <div className="absolute bottom-20 right-5 z-10 rounded-2xl border border-white/15 bg-indigo-950/45 px-3 py-2 backdrop-blur-xl">
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setCurrentSlideIndex((prev) => Math.max(prev - 1, 0))}
-                  disabled={currentSlideIndex === 0}
-                  className="grid h-9 w-9 place-items-center rounded-full border border-white/15 bg-white/10 transition hover:bg-white/20 disabled:opacity-35"
-                  aria-label="上一页 PPT"
-                >
-                  <ChevronLeft size={18} />
-                </button>
-                <span className="min-w-20 text-center text-xs font-bold text-purple-50">
-                  3D 课件 {currentSlideIndex + 1}/{activeLesson.slides.length}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setCurrentSlideIndex((prev) => Math.min(prev + 1, activeLesson.slides.length - 1))}
-                  disabled={currentSlideIndex === activeLesson.slides.length - 1}
-                  className="grid h-9 w-9 place-items-center rounded-full border border-white/15 bg-white/10 transition hover:bg-white/20 disabled:opacity-35"
-                  aria-label="下一页 PPT"
-                >
-                  <ChevronRight size={18} />
-                </button>
-              </div>
-            </div>
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-indigo-950/70 to-transparent" />
-            <div className="absolute bottom-6 left-6 right-6 flex flex-wrap gap-3 text-xs text-white/85">
-              <span className="rounded-full bg-white/10 px-3 py-2 backdrop-blur-md"><Volume2 size={14} className="mr-1 inline" />{selected?.voiceType}</span>
-              <span className="rounded-full bg-white/10 px-3 py-2 backdrop-blur-md"><Glasses size={14} className="mr-1 inline" />支持课堂互动</span>
-            </div>
-          </div>
-
-          {showAvatarPanel && (
-            <div
-              className="fixed inset-0 z-50 flex justify-end bg-indigo-950/60 p-3 backdrop-blur-sm sm:p-6"
-              role="presentation"
-              onMouseDown={(event) => {
-                if (event.target === event.currentTarget) setShowAvatarPanel(false);
-              }}
-            >
-              <aside
-                className="flex h-full w-full max-w-md flex-col overflow-y-auto rounded-[32px] border border-white/20 bg-[#2b1175]/95 p-5 text-white shadow-2xl sm:p-6"
-                aria-label="教师形象设置"
-              >
-                <div className="mb-5 flex items-start justify-between gap-4">
-                  <div>
-                    <h2 className="text-xl font-black">教师形象</h2>
-                    <p className="mt-1 text-sm text-purple-100/65">选择后会同步到讲课页和互动答疑组件。</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowAvatarPanel(false)}
-                    className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/15 bg-white/10 transition hover:bg-white/20"
-                    aria-label="关闭教师形象设置"
-                  >
-                    <X size={19} />
-                  </button>
+        {/* 主区域：3D教师(左) + 提问框(右) 并排 */}
+        <section className="flex flex-col gap-6 lg:flex-row">
+          {/* 左侧：3D教师展示区 */}
+          <div className="lg:flex-[3] lg:flex lg:flex-col lg:gap-6">
+            <div className="relative h-[48vh] min-h-[380px] overflow-hidden rounded-[32px] border border-white/20 bg-gradient-to-b from-white/15 to-indigo-950/25 shadow-2xl backdrop-blur-xl lg:h-[76vh] lg:min-h-[620px] lg:max-h-[840px]">
+              <div className="absolute left-6 top-6 z-10 max-w-xs rounded-2xl border border-white/15 bg-indigo-950/35 p-4 backdrop-blur-xl">
+                <div className="mb-1 flex items-center gap-2 text-xl font-black">
+                  <Sparkles size={18} className="text-amber-300" />
+                  {selected?.name}
                 </div>
-            <div className="space-y-3">
-              {avatars.map((avatar) => {
-                const selectedNow = avatar.id === selectedId;
-                return (
-                  <button
-                    key={avatar.id}
-                    type="button"
-                    onClick={() => {
-                      setViewer(null);
-                      setSelectedId(avatar.id);
-                      setSaveState('idle');
-                    }}
-                    className={`flex w-full items-center gap-4 rounded-2xl border p-3 text-left transition ${
-                      selectedNow
-                        ? 'border-cyan-300 bg-white/20 shadow-lg shadow-cyan-500/10'
-                        : 'border-white/10 bg-white/[.07] hover:border-white/25 hover:bg-white/10'
-                    }`}
-                  >
-                    <span className={`grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br ${avatar.color} text-xl font-black shadow-lg`}>
-                      {avatar.name.slice(0, 1)}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-2 font-bold">
-                        {avatar.name}
-                        {savedId === avatar.id && <Check size={16} className="text-cyan-300" />}
-                      </span>
-                      <span className="mt-1 block truncate text-xs text-purple-100/60">{avatar.description}</span>
-                    </span>
-                    <span className={`h-4 w-4 rounded-full border-2 ${selectedNow ? 'border-cyan-300 bg-cyan-300 shadow-[0_0_12px_#67e8f9]' : 'border-white/35'}`} />
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="mt-5 rounded-2xl border border-white/10 bg-white/[.06] p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-bold">互动表现预览</h3>
-                  <p className="mt-0.5 text-xs text-purple-100/55">
-                    {demoState || (viewer ? '点击体验表情与教学动作' : '模型加载完成后可体验')}
-                  </p>
-                </div>
-                <span className={`h-2.5 w-2.5 rounded-full ${viewer ? 'bg-emerald-300 shadow-[0_0_10px_#6ee7b7]' : 'bg-white/25'}`} />
+                <p className="text-sm leading-6 text-purple-100/80">{selected?.description}</p>
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  disabled={!viewer}
-                  onClick={() => playDemo('happy', 'smallNod', '正在展示：微笑鼓励')}
-                  className="flex flex-col items-center gap-1.5 rounded-xl border border-white/10 bg-white/[.07] px-2 py-3 text-xs font-semibold transition hover:border-fuchsia-300/60 hover:bg-white/15 disabled:cursor-wait disabled:opacity-40"
-                >
-                  <Smile size={19} className="text-fuchsia-200" />
-                  微笑
-                </button>
-                <button
-                  type="button"
-                  disabled={!viewer}
-                  onClick={() => playDemo('relaxed', 'tiltHead', '正在展示：好奇思考')}
-                  className="flex flex-col items-center gap-1.5 rounded-xl border border-white/10 bg-white/[.07] px-2 py-3 text-xs font-semibold transition hover:border-cyan-300/60 hover:bg-white/15 disabled:cursor-wait disabled:opacity-40"
-                >
-                  <Brain size={19} className="text-cyan-200" />
-                  思考
-                </button>
-                <button
-                  type="button"
-                  disabled={!viewer}
-                  onClick={() => playDemo('happy', 'bigNod', '正在展示：重点强调')}
-                  className="flex flex-col items-center gap-1.5 rounded-xl border border-white/10 bg-white/[.07] px-2 py-3 text-xs font-semibold transition hover:border-amber-300/60 hover:bg-white/15 disabled:cursor-wait disabled:opacity-40"
-                >
-                  <Megaphone size={19} className="text-amber-200" />
-                  强调
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-auto pt-6">
-              {saveState === 'local' && (
-                <p className="mb-3 flex items-center gap-2 text-xs text-amber-200">
-                  <CloudOff size={15} /> 后端接口尚未连通，选择已保存在当前浏览器。
-                </p>
+              {selected?.modelUrl && (
+                <VirtualTeacherViewer
+                  key={selected.id}
+                  modelUrl={selected.modelUrl}
+                  teachingSlide={teachingSlide}
+                  onReady={handleViewerReady}
+                />
               )}
-              {saveState === 'error' && <p className="mb-3 text-xs text-rose-200">保存失败，请重新登录后再试。</p>}
               <button
                 type="button"
-                onClick={async () => {
-                  await handleSave();
-                  setShowAvatarPanel(false);
-                }}
-                disabled={!selected || saveState === 'saving'}
-                className="w-full rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-500 px-5 py-3.5 font-black text-indigo-950 shadow-xl transition hover:-translate-y-0.5 hover:shadow-cyan-400/25 disabled:cursor-wait disabled:opacity-60"
+                onClick={() => setShowAvatarPanel(true)}
+                className="absolute right-6 top-6 z-10 inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-indigo-950/45 px-4 py-2.5 text-sm font-bold text-white shadow-lg backdrop-blur-xl transition hover:bg-indigo-900/70"
               >
-                {saveState === 'saving' ? '正在保存…' : savedId === selected?.id ? '已设为我的虚拟教师' : '使用这个形象'}
+                <UserRound size={17} />
+                教师形象
               </button>
-            </div>
-              </aside>
-            </div>
-          )}
-        </section>
-
-        <section className="mt-6 flex flex-col gap-6">
-          <div className="order-2 rounded-[28px] border border-white/20 bg-white/[.09] p-5 shadow-2xl backdrop-blur-xl sm:p-6">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-cyan-100/70">教师讲课</p>
-                <h2 className="text-2xl font-black">{currentSlide.title}</h2>
-              </div>
-              <div className="flex items-center gap-2">
-                {streamState && (
-                  <span className="rounded-full border border-cyan-200/30 bg-cyan-300/10 px-3 py-1.5 text-xs font-bold text-cyan-100">
-                    流式：{streamState}
+              <div className="absolute bottom-20 right-5 z-10 rounded-2xl border border-white/15 bg-indigo-950/45 px-3 py-2 backdrop-blur-xl">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentSlideIndex((prev) => Math.max(prev - 1, 0))}
+                    disabled={currentSlideIndex === 0}
+                    className="grid h-9 w-9 place-items-center rounded-full border border-white/15 bg-white/10 transition hover:bg-white/20 disabled:opacity-35"
+                    aria-label="上一页 PPT"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+                  <span className="min-w-20 text-center text-xs font-bold text-purple-50">
+                    3D 课件 {currentSlideIndex + 1}/{activeLesson.slides.length}
                   </span>
-                )}
-                <button
-                  type="button"
-                  onClick={handleTeach}
-                  disabled={speechState === 'speaking'}
-                  className="inline-flex items-center gap-2 rounded-2xl bg-amber-300 px-5 py-3 font-black text-indigo-950 shadow-lg transition hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-70"
-                >
-                  {speechState === 'speaking' ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} />}
-                  开始讲解
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentSlideIndex((prev) => Math.min(prev + 1, activeLesson.slides.length - 1))}
+                    disabled={currentSlideIndex === activeLesson.slides.length - 1}
+                    className="grid h-9 w-9 place-items-center rounded-full border border-white/15 bg-white/10 transition hover:bg-white/20 disabled:opacity-35"
+                    aria-label="下一页 PPT"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+                </div>
+              </div>
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-indigo-950/70 to-transparent" />
+              <div className="absolute bottom-6 left-6 right-6 flex flex-wrap gap-3 text-xs text-white/85">
+                <span className="rounded-full bg-white/10 px-3 py-2 backdrop-blur-md"><Volume2 size={14} className="mr-1 inline" />{selected?.voiceType}</span>
+                <span className="rounded-full bg-white/10 px-3 py-2 backdrop-blur-md"><Glasses size={14} className="mr-1 inline" />支持课堂互动</span>
               </div>
             </div>
-            <div className="mb-5 flex flex-wrap gap-2">
-              {lessons.map((lesson) => (
-                <button
-                  key={lesson.id}
-                  type="button"
-                  onClick={() => setActiveLessonId(lesson.id)}
-                  className={`rounded-full border px-4 py-2 text-sm font-bold transition ${
-                    lesson.id === activeLesson.id
-                      ? 'border-cyan-300 bg-cyan-300 text-indigo-950'
-                      : 'border-white/15 bg-white/[.06] text-purple-50 hover:bg-white/15'
-                  }`}
-                >
-                  {lesson.tag}
-                </button>
-              ))}
-              <span className={`rounded-full border px-3 py-2 text-xs font-bold ${
-                lessonSource === 'api'
-                  ? 'border-emerald-300/40 bg-emerald-300/15 text-emerald-100'
-                  : lessonSource === 'loading'
-                    ? 'border-cyan-300/40 bg-cyan-300/15 text-cyan-100'
-                    : 'border-amber-300/40 bg-amber-300/15 text-amber-100'
-              }`}>
-                {lessonSource === 'api'
-                  ? `正式课程 · ${courseId}`
-                  : lessonSource === 'loading'
-                    ? '正在加载正式课件'
-                    : lessonSource === 'empty'
-                      ? '该课程暂无课件 · 当前为演示'
-                      : lessonSource === 'error'
-                        ? '课件接口不可用 · 当前为演示'
-                        : '演示课件'}
-              </span>
-            </div>
-            <p className="rounded-3xl border border-white/10 bg-indigo-950/25 p-5 text-base leading-8 text-purple-50/90">
-              {currentSlide.script}
-            </p>
-            <div className="mt-4 rounded-2xl border border-cyan-200/20 bg-cyan-300/10 p-4 text-sm text-cyan-50">
-              课堂引导：{activeLesson.prompt}
+
+            {/* 教师讲课区 — 桌面端：在3D教师下方 */}
+            <div className="hidden rounded-[28px] border border-white/20 bg-white/[.09] p-5 shadow-2xl backdrop-blur-xl sm:p-6 lg:block">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-cyan-100/70">教师讲课</p>
+                  <h2 className="text-2xl font-black">{currentSlide.title}</h2>
+                </div>
+                <div className="flex items-center gap-2">
+                  {streamState && (
+                    <span className="rounded-full border border-cyan-200/30 bg-cyan-300/10 px-3 py-1.5 text-xs font-bold text-cyan-100">
+                      流式：{streamState}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleTeach}
+                    disabled={speechState === 'speaking'}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-amber-300 px-5 py-3 font-black text-indigo-950 shadow-lg transition hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-70"
+                  >
+                    {speechState === 'speaking' ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} />}
+                    开始讲解
+                  </button>
+                </div>
+              </div>
+              <div className="mb-5 flex flex-wrap gap-2">
+                {lessons.map((lesson) => (
+                  <button
+                    key={lesson.id}
+                    type="button"
+                    onClick={() => setActiveLessonId(lesson.id)}
+                    className={`rounded-full border px-4 py-2 text-sm font-bold transition ${
+                      lesson.id === activeLesson.id
+                        ? 'border-cyan-300 bg-cyan-300 text-indigo-950'
+                        : 'border-white/15 bg-white/[.06] text-purple-50 hover:bg-white/15'
+                    }`}
+                  >
+                    {lesson.tag}
+                  </button>
+                ))}
+                <span className={`rounded-full border px-3 py-2 text-xs font-bold ${
+                  lessonSource === 'api'
+                    ? 'border-emerald-300/40 bg-emerald-300/15 text-emerald-100'
+                    : lessonSource === 'loading'
+                      ? 'border-cyan-300/40 bg-cyan-300/15 text-cyan-100'
+                      : 'border-amber-300/40 bg-amber-300/15 text-amber-100'
+                }`}>
+                  {lessonSource === 'api'
+                    ? `正式课程 · ${courseId}`
+                    : lessonSource === 'loading'
+                      ? '正在加载正式课件'
+                      : lessonSource === 'empty'
+                        ? '该课程暂无课件 · 当前为演示'
+                        : lessonSource === 'error'
+                          ? '课件接口不可用 · 当前为演示'
+                          : '演示课件'}
+                </span>
+              </div>
+              <p className="rounded-3xl border border-white/10 bg-indigo-950/25 p-5 text-base leading-8 text-purple-50/90">
+                {currentSlide.script}
+              </p>
+              <div className="mt-4 rounded-2xl border border-cyan-200/20 bg-cyan-300/10 p-4 text-sm text-cyan-50">
+                课堂引导：{activeLesson.prompt}
+              </div>
             </div>
           </div>
 
-          <div className="order-1 min-h-[300px] rounded-[28px] border border-white/20 bg-indigo-950/25 p-5 shadow-2xl backdrop-blur-xl sm:p-6">
-            <div className="mb-4">
-              <p className="text-sm font-semibold text-cyan-100/70">互动提问</p>
-              <h2 className="text-2xl font-black">提问与反馈</h2>
+          {/* 右侧：互动提问区 — 桌面端与3D教师并排且等高，移动端在3D教师下方 */}
+          <div className="flex min-h-[240px] flex-col rounded-[28px] border border-white/20 bg-indigo-950/25 p-5 shadow-2xl backdrop-blur-xl sm:p-6 lg:flex-[1] lg:min-w-[340px] lg:h-[76vh] lg:min-h-[620px] lg:max-h-[840px]">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-cyan-100/70">互动提问</p>
+                <h2 className="text-2xl font-black">提问与反馈</h2>
+              </div>
+              {/* 移动端讲解按钮 */}
+              <button
+                type="button"
+                onClick={handleTeach}
+                disabled={speechState === 'speaking'}
+                className="inline-flex items-center gap-1.5 rounded-2xl bg-amber-300 px-4 py-2.5 text-sm font-black text-indigo-950 shadow-lg transition hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-70 lg:hidden"
+              >
+                {speechState === 'speaking' ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
+                讲解
+              </button>
             </div>
-            <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
+            <div className="flex-1 space-y-3 overflow-y-auto pr-1">
               {messages.map((message, index) => (
                 <div
                   key={`${message.role}-${index}`}
                   className={`rounded-2xl border p-3 text-sm leading-6 ${
                     message.role === 'student'
-                      ? 'ml-8 border-cyan-200/20 bg-cyan-300/15 text-cyan-50'
+                      ? 'ml-4 border-cyan-200/20 bg-cyan-300/15 text-cyan-50'
                       : message.role === 'system'
                         ? 'border-amber-200/20 bg-amber-300/10 text-amber-100'
-                        : 'mr-8 border-white/10 bg-white/[.07] text-purple-50'
+                        : 'mr-4 border-white/10 bg-white/[.07] text-purple-50'
                   }`}
                 >
                   {message.text}
@@ -690,14 +605,168 @@ export default function TeacherAvatarPage({ courseId = '', onBack }) {
                 type="button"
                 onClick={handleAsk}
                 disabled={askState === 'asking'}
-                className="grid h-12 w-12 place-items-center rounded-2xl bg-cyan-300 text-indigo-950 transition hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-70"
+                className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-cyan-300 text-indigo-950 transition hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-70"
                 aria-label="发送问题"
               >
                 {askState === 'asking' ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
               </button>
             </div>
           </div>
+
+          {/* 教师讲课区 — 移动端：在提问区下方 */}
+          <div className="rounded-[28px] border border-white/20 bg-white/[.09] p-5 shadow-2xl backdrop-blur-xl sm:p-6 lg:hidden">
+            <div className="mb-4">
+              <p className="text-sm font-semibold text-cyan-100/70">教师讲课</p>
+              <h2 className="text-xl font-black">{currentSlide.title}</h2>
+            </div>
+            <div className="mb-4 flex flex-wrap gap-2">
+              {lessons.map((lesson) => (
+                <button
+                  key={lesson.id}
+                  type="button"
+                  onClick={() => setActiveLessonId(lesson.id)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${
+                    lesson.id === activeLesson.id
+                      ? 'border-cyan-300 bg-cyan-300 text-indigo-950'
+                      : 'border-white/15 bg-white/[.06] text-purple-50 hover:bg-white/15'
+                  }`}
+                >
+                  {lesson.tag}
+                </button>
+              ))}
+            </div>
+            <p className="rounded-3xl border border-white/10 bg-indigo-950/25 p-4 text-sm leading-7 text-purple-50/90">
+              {currentSlide.script}
+            </p>
+            <div className="mt-3 rounded-2xl border border-cyan-200/20 bg-cyan-300/10 p-3 text-xs text-cyan-50">
+              课堂引导：{activeLesson.prompt}
+            </div>
+          </div>
         </section>
+
+        {showAvatarPanel && (
+          <div
+            className="fixed inset-0 z-50 flex justify-end bg-indigo-950/60 p-3 backdrop-blur-sm sm:p-6"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setShowAvatarPanel(false);
+            }}
+          >
+            <aside
+              className="flex h-full w-full max-w-md flex-col overflow-y-auto rounded-[32px] border border-white/20 bg-[#2b1175]/95 p-5 text-white shadow-2xl sm:p-6"
+              aria-label="教师形象设置"
+            >
+              <div className="mb-5 flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-black">教师形象</h2>
+                  <p className="mt-1 text-sm text-purple-100/65">选择后会同步到讲课页和互动答疑组件。</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAvatarPanel(false)}
+                  className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/15 bg-white/10 transition hover:bg-white/20"
+                  aria-label="关闭教师形象设置"
+                >
+                  <X size={19} />
+                </button>
+              </div>
+          <div className="space-y-3">
+            {avatars.map((avatar) => {
+              const selectedNow = avatar.id === selectedId;
+              return (
+                <button
+                  key={avatar.id}
+                  type="button"
+                  onClick={() => {
+                    setViewer(null);
+                    setSelectedId(avatar.id);
+                    setSaveState('idle');
+                  }}
+                  className={`flex w-full items-center gap-4 rounded-2xl border p-3 text-left transition ${
+                    selectedNow
+                      ? 'border-cyan-300 bg-white/20 shadow-lg shadow-cyan-500/10'
+                      : 'border-white/10 bg-white/[.07] hover:border-white/25 hover:bg-white/10'
+                  }`}
+                >
+                  <span className={`grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br ${avatar.color} text-xl font-black shadow-lg`}>
+                    {avatar.name.slice(0, 1)}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2 font-bold">
+                      {avatar.name}
+                      {savedId === avatar.id && <Check size={16} className="text-cyan-300" />}
+                    </span>
+                    <span className="mt-1 block truncate text-xs text-purple-100/60">{avatar.description}</span>
+                  </span>
+                  <span className={`h-4 w-4 rounded-full border-2 ${selectedNow ? 'border-cyan-300 bg-cyan-300 shadow-[0_0_12px_#67e8f9]' : 'border-white/35'}`} />
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-5 rounded-2xl border border-white/10 bg-white/[.06] p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold">互动表现预览</h3>
+                <p className="mt-0.5 text-xs text-purple-100/55">
+                  {demoState || (viewer ? '点击体验表情与教学动作' : '模型加载完成后可体验')}
+                </p>
+              </div>
+              <span className={`h-2.5 w-2.5 rounded-full ${viewer ? 'bg-emerald-300 shadow-[0_0_10px_#6ee7b7]' : 'bg-white/25'}`} />
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                disabled={!viewer}
+                onClick={() => playDemo('happy', 'smallNod', '正在展示：微笑鼓励')}
+                className="flex flex-col items-center gap-1.5 rounded-xl border border-white/10 bg-white/[.07] px-2 py-3 text-xs font-semibold transition hover:border-fuchsia-300/60 hover:bg-white/15 disabled:cursor-wait disabled:opacity-40"
+              >
+                <Smile size={19} className="text-fuchsia-200" />
+                微笑
+              </button>
+              <button
+                type="button"
+                disabled={!viewer}
+                onClick={() => playDemo('relaxed', 'tiltHead', '正在展示：好奇思考')}
+                className="flex flex-col items-center gap-1.5 rounded-xl border border-white/10 bg-white/[.07] px-2 py-3 text-xs font-semibold transition hover:border-cyan-300/60 hover:bg-white/15 disabled:cursor-wait disabled:opacity-40"
+              >
+                <Brain size={19} className="text-cyan-200" />
+                思考
+              </button>
+              <button
+                type="button"
+                disabled={!viewer}
+                onClick={() => playDemo('happy', 'bigNod', '正在展示：重点强调')}
+                className="flex flex-col items-center gap-1.5 rounded-xl border border-white/10 bg-white/[.07] px-2 py-3 text-xs font-semibold transition hover:border-amber-300/60 hover:bg-white/15 disabled:cursor-wait disabled:opacity-40"
+              >
+                <Megaphone size={19} className="text-amber-200" />
+                强调
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-auto pt-6">
+            {saveState === 'local' && (
+              <p className="mb-3 flex items-center gap-2 text-xs text-amber-200">
+                <CloudOff size={15} /> 后端接口尚未连通，选择已保存在当前浏览器。
+              </p>
+            )}
+            {saveState === 'error' && <p className="mb-3 text-xs text-rose-200">保存失败，请重新登录后再试。</p>}
+            <button
+              type="button"
+              onClick={async () => {
+                await handleSave();
+                setShowAvatarPanel(false);
+              }}
+              disabled={!selected || saveState === 'saving'}
+              className="w-full rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-500 px-5 py-3.5 font-black text-indigo-950 shadow-xl transition hover:-translate-y-0.5 hover:shadow-cyan-400/25 disabled:cursor-wait disabled:opacity-60"
+            >
+              {saveState === 'saving' ? '正在保存…' : savedId === selected?.id ? '已设为我的虚拟教师' : '使用这个形象'}
+            </button>
+          </div>
+            </aside>
+          </div>
+        )}
       </div>
     </main>
   );

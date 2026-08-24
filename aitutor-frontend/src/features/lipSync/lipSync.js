@@ -7,7 +7,7 @@ export class LipSync {
 
     this.analyser = audio.createAnalyser();
     this.analyser.fftSize = DEFAULT_FFT_SIZE;
-    this.analyser.smoothingTimeConstant = 0.7;
+    this.analyser.smoothingTimeConstant = 0.3; // 低平滑，快速响应字间停顿
     this.timeDomainData = new Float32Array(TIME_DOMAIN_DATA_LENGTH);
     this.frequencyData = new Uint8Array(this.analyser.frequencyBinCount);
     this.currentSource = null; // 跟踪当前音频源
@@ -26,12 +26,12 @@ export class LipSync {
     const mediaPlaying = !!(this._mediaElementRef && !this._mediaElementRef.paused && !this._mediaElementRef.ended);
     const active = !!this.currentSource || this.isMicrophoneConnected || mediaPlaying;
 
-    // 在非活跃状态下快速衰减到0
-    if (!active && !this._lastActive) {
-      this._prevVolume *= 0.85;
+    // 非活跃状态：立即衰减到0（不等第二帧）
+    if (!active) {
+      this._prevVolume *= 0.6;
       if (this._prevVolume < 0.001) this._prevVolume = 0;
-      this._lastActive = active;
-      return { volume: this._prevVolume, weights: undefined, active };
+      this._lastActive = false;
+      return { volume: this._prevVolume, weights: undefined, active: false };
     }
 
     // 时域数据用于音量（包络）
@@ -45,24 +45,26 @@ export class LipSync {
       rms += sample * sample;
     }
     rms = Math.sqrt(rms / TIME_DOMAIN_DATA_LENGTH);
-    const combinedVolume = peak * 0.7 + rms * 0.3;
+    const combinedVolume = peak * 0.5 + rms * 0.5;
 
-    // 非线性映射以增强动态范围
-    let env = 1 / (1 + Math.exp(-35 * combinedVolume + 3));
-    if (env < 0.03) env = 0; // 静音门限
-    env = Math.pow(env, 0.8) * 1.2;
-    env = Math.min(env, 1.0);
+    // 线性映射 + 高门限，避免底噪被放大成张嘴
+    let env;
+    if (combinedVolume < 0.015) {
+      env = 0; // 静音门限：低于此值完全闭嘴
+    } else {
+      env = Math.min(1.0, (combinedVolume - 0.015) / 0.08);
+    }
 
-    // Attack/Release 平滑（独立上升/下降常数）
-    const attack = 0.35; // 越大上升越快
-    const release = 0.20; // 越大下降越快
+    // Attack/Release 平滑
+    const attack = 0.4;
+    const release = 0.5; // 下降比上升快，确保字间停顿能闭嘴
     if (env > this._prevVolume) {
       this._prevVolume = this._prevVolume + (env - this._prevVolume) * attack;
     } else {
       this._prevVolume = this._prevVolume + (env - this._prevVolume) * release;
     }
 
-    // 频域数据用于粗略的元音估计（A/I/U/E/O -> aa/ee/ih/oh/ou）
+    // 频域数据用于元音估计
     this.analyser.getByteFrequencyData(this.frequencyData);
     const weights = this._estimateVowelWeights(this.frequencyData, this._prevVolume);
 
@@ -167,45 +169,44 @@ export class LipSync {
     return this.isMicrophoneConnected;
   }
 
-  // 简易的频谱特征到元音嘴型的估计
+  // 基于频段能量比的元音估计，针对中文 TTS 优化
   _estimateVowelWeights(freq, volume) {
     if (volume === 0) {
       return undefined;
     }
 
-    // 计算频谱质心（spectral centroid）
-    let num = 0;
-    let den = 0;
-    const n = freq.length;
-    for (let i = 0; i < n; i++) {
-      const mag = freq[i];
-      num += i * mag;
-      den += mag;
+    // 将频谱分为三个频段计算能量
+    // low: 0-800Hz (开口音 aa/oh), mid: 800-2500Hz (半开音 ou), high: 2500Hz+ (闭口音 ee/ih)
+    const sampleRate = this.audio.sampleRate || 44100;
+    const binWidth = (sampleRate / 2) / freq.length;
+    const lowEnd = Math.floor(800 / binWidth);
+    const midEnd = Math.floor(2500 / binWidth);
+
+    let lowEnergy = 0, midEnergy = 0, highEnergy = 0;
+    for (let i = 0; i < freq.length; i++) {
+      const mag = freq[i] / 255;
+      if (i < lowEnd) lowEnergy += mag * mag;
+      else if (i < midEnd) midEnergy += mag * mag;
+      else highEnergy += mag * mag;
     }
-    let centroid = den > 0 ? num / den / n : 0.0; // 0..1
+    lowEnergy /= Math.max(1, lowEnd);
+    midEnergy /= Math.max(1, midEnd - lowEnd);
+    highEnergy /= Math.max(1, freq.length - midEnd);
 
-    // 三角隶属近似：
-    // 低质心 -> aa（张口大），中质心 -> oh/ou， 高质心 -> ee/ih
-    const aa = this._clamp01(1.2 * (1.0 - centroid));
-    const mid = this._clamp01(1.0 - Math.abs(centroid - 0.5) * 2.0);
-    const ee = this._clamp01(1.2 * centroid - 0.1);
+    const total = lowEnergy + midEnergy + highEnergy;
+    if (total < 1e-6) return undefined;
 
-    // 归一并乘音量
-    let sum = aa + mid + ee;
-    if (sum < 1e-6) {
-      return undefined;
-    }
-    const aaW = (aa / sum) * volume;
-    const ohW = (mid / sum) * volume;
-    const eeW = (ee / sum) * volume;
+    // 主要用音量驱动张嘴，频段只做微调
+    const aaRatio = lowEnergy / total;
+    const ohRatio = midEnergy / total;
+    const eeRatio = highEnergy / total;
 
-    // 映射到 five-visemes：aa, ee, ih(≈ee), oh, ou(≈oh)
     return {
-      aa: aaW,
-      ee: eeW * 0.6 + aaW * 0.1, // 略微混合避免突变
-      ih: eeW,
-      oh: ohW,
-      ou: ohW * 0.9 + aaW * 0.1,
+      aa: volume * (0.5 + aaRatio * 0.5),
+      oh: volume * ohRatio * 0.4,
+      ou: volume * ohRatio * 0.3,
+      ee: volume * eeRatio * 0.3,
+      ih: volume * eeRatio * 0.2,
     };
   }
 

@@ -23,6 +23,9 @@ public class LessonSession {
     
     @TableField("course_id")
     private String courseId;
+
+    @TableField("user_id")
+    private Long userId; // 所属用户ID（用于归属校验，防越权）
     
     @TableField("title")
     private String title;
