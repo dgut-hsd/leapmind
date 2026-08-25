@@ -12,7 +12,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableAsync
 @EnableEurekaServer
 @EnableScheduling  //定时任务
-@MapperScan("com.treepeople.leapmindtts.mapper")
+@MapperScan({"com.treepeople.leapmindtts.mapper", "com.treepeople.leapmindtts.photo.mapper"})
 public class LeapMindTtsApplication {
 
 	public static void main(String[] args) {

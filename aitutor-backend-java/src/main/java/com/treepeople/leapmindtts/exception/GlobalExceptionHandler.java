@@ -135,13 +135,17 @@ public class GlobalExceptionHandler {
     }
     
     /**
-     * 处理运行时异常
+     * 处理运行时异常。
+     * <p>
+     * 安全原则：不向客户端泄露内部异常详情，仅返回通用提示。
+     * 异常详情记录在服务端日志中供排查。
+     * </p>
      */
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<ApiResponse<Void>> handleRuntimeException(RuntimeException e) {
         log.error("运行时异常: {}", e.getMessage(), e);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponse.error(500, "系统内部错误: " + e.getMessage()));
+                .body(ApiResponse.error(500, "系统内部错误，请稍后重试或联系管理员"));
     }
     
     /**

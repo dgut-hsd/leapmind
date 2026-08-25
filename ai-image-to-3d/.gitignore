@@ -1,0 +1,15 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+.coverage
+htmlcov/
+node_modules/
+.next/
+coverage/
+data/
+*.db
+*.sqlite3
+*.pyc
+npm-debug.log*
+

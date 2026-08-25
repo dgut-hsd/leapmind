@@ -1,6 +1,7 @@
 package com.treepeople.leapmindtts.config;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -11,12 +12,18 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.AccessDeniedHandlerImpl;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.AnyRequestMatcher;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.http.HttpStatus;
 
 /**
  * 安全配置类
  * 配置密码加密和基础安全设置
  */
+@Slf4j
 @Configuration
 @EnableWebSecurity
 @RequiredArgsConstructor
@@ -64,15 +71,18 @@ public class SecurityConfig {
                         .requestMatchers("/api/education/**").permitAll()
                         // 允许访问 API 文档
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/doc.html", "/webjars/**").permitAll()
+                        // 错误转发页无需认证（否则 404 路径会二次被拒返回 401）
+                        .requestMatchers("/error").permitAll()
                         // 允许访问静态资源
                         .requestMatchers("/static/**", "/docs/**", "/*.html", "/*.js", "/*.css", "/admin/**", "/css/**", "/js/**", "/image/**").permitAll()
-                        // 允许访问短信测试接口
-                        .requestMatchers("/api/test/**").permitAll()
-                        .requestMatchers("/api/admin/**").permitAll()
-                        // 允许访问管理后台审核接口
-                        .requestMatchers("/admin/review/**").permitAll()
-                        // 允许访问流式对话和打断接口
-                        .requestMatchers("/api/conversation/**").permitAll()
+                        // 测试接口需要认证（生产环境应禁用）
+                        .requestMatchers("/api/test/**").authenticated()
+                        // 管理接口需要认证（具体权限由 @AdminRequired 注解控制）
+                        .requestMatchers("/api/admin/**").authenticated()
+                        // 管理后台审核接口需要认证
+                        .requestMatchers("/admin/review/**").authenticated()
+                        // 流式对话接口需要认证（防止匿名滥用 AI 资源）
+                        .requestMatchers("/api/conversation/**").authenticated()
                         // TTS 音频需要允许浏览器直接播放，其余虚拟教师接口需要登录
                         .requestMatchers(HttpMethod.GET, "/api/virtual-teacher/audio/**").permitAll()
                         .requestMatchers("/api/virtual-teacher/**").authenticated()
@@ -87,10 +97,17 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(exceptions -> exceptions
+                        // M6 画像接口使用 M6 专属 401/403 格式；其余路径使用标准 401/403。
+                        // 注意：defaultAuthenticationEntryPointFor 的映射数量必须 >= 2，
+                        // 否则 Spring Security 会把唯一映射提升为全局默认 entry point。
                         .defaultAuthenticationEntryPointFor(m6SecurityErrorHandler,
-                                new org.springframework.security.web.util.matcher.AntPathRequestMatcher("/api/user-profile/**"))
+                                new AntPathRequestMatcher("/api/user-profile/**"))
+                        .defaultAuthenticationEntryPointFor(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
+                                AnyRequestMatcher.INSTANCE)
                         .defaultAccessDeniedHandlerFor(m6SecurityErrorHandler,
-                                new org.springframework.security.web.util.matcher.AntPathRequestMatcher("/api/user-profile/**")))
+                                new AntPathRequestMatcher("/api/user-profile/**"))
+                        .defaultAccessDeniedHandlerFor(new AccessDeniedHandlerImpl(),
+                                AnyRequestMatcher.INSTANCE))
                 // 添加JWT认证过滤器
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 

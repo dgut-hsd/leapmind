@@ -218,7 +218,7 @@ export async function synthesizeVirtualTeacherSpeech({
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      Accept: 'audio/*, application/json',
+      Accept: 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify({
@@ -232,8 +232,35 @@ export async function synthesizeVirtualTeacherSpeech({
   if (!response.ok) {
     throw new ApiError('虚拟教师语音合成暂不可用', response.status);
   }
-  return readAudioResponse(response);
+
+  const body = await response.json();
+  const data = unwrap(body);
+  const audioUrl = data?.audioUrl ?? data?.url;
+  if (!audioUrl) {
+    throw new ApiError('语音合成未返回音频地址', 502);
+  }
+
+  const audioResponse = await fetch(resolveApiUrl(audioUrl), {
+    credentials: 'include',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  if (!audioResponse.ok) {
+    throw new ApiError(`音频获取失败: ${audioResponse.status}`, audioResponse.status);
+  }
+
+  const audioBlob = await audioResponse.blob();
+  if (!audioBlob || audioBlob.size === 0) {
+    throw new ApiError('语音合成返回空音频', 502);
+  }
+  return {
+    audioBlob,
+    animation: normalizeAnimationPayload(data),
+    durationMs: data?.durationMs,
+  };
 }
+
 /**
  * M8 流式合成：POST /tts/stream，返回带 PCM 契约校验的 ReadableStream reader。
  *

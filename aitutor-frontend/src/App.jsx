@@ -4,7 +4,6 @@ import LoginPage from './pages/LoginPage';
 import LoginPage2 from './pages/LoginPage2.jsx';
 import ProjectListPage from './pages/ProjectListPage';
 import LecturePage from './pages/LecturePage';
-import LecturePage2 from './pages/LecturePage2';
 import TemHomePage from './pages/TemHomePage';
 import ProfilePage from './pages/ProfilePage.jsx';
 import PhotoQAPage from './pages/m2/PhotoQAPage';
@@ -14,6 +13,9 @@ import LearningProfilePage from './pages/LearningProfilePage.jsx';
 import KnowledgePointDetailPage from './pages/KnowledgePointDetailPage.jsx';
 // M4 讲课流程 - 独立容器，通过 m4Page state 触发，与 M2 路由风格一致
 import M4LectureContainer from './pages/lecture/M4LectureContainer';
+// M4 讲课演示页（课程卡片直达：带 mock PPT + 虚拟老师）
+import LecturePresentPage from './pages/lecture/LecturePresentPage';
+import { mockPPTStructure } from './data/mockLecture';
 // M1 做题页
 import PracticePage from './pages/PracticePage.jsx';
 import { hasValidToken } from './utils/tokenManager';
@@ -123,7 +125,12 @@ export default function App() {
             ) : m2Page === 'explain-history' ? (
                 <ExplainHistoryPage onBack={m2Params.from === 'explain' ? () => { setM2Params({}); setM2Page('explain'); } : () => setM2Page(null)} onReplay={(id) => { setM2Params({ replayId: id, from: 'explain-history' }); setM2Page('explain'); }} />
             ) : currentCourseId ? (
-                      <LecturePage2 courseId={currentCourseId} onBack={() => setCurrentCourseId('')} />
+                      <LecturePresentPage
+                          lectureData={{ ...mockPPTStructure, courseId: currentCourseId, title: `课程 ${currentCourseId}` }}
+                          userId={1}
+                          onBack={() => setCurrentCourseId('')}
+                          onFinish={() => setCurrentCourseId('')}
+                      />
             ) : learningProfileView === 'detail' ? (
                 <KnowledgePointDetailPage
                     knowledgePointId={selectedKnowledgePointId}

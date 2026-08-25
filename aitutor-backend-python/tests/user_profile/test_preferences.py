@@ -59,9 +59,53 @@ class CalculateLearningPreferenceTest(unittest.TestCase):
     self.assertAlmostEqual(0.2, result.scores[LearningMode.KINESTHETIC])
     self.assertEqual((LearningMode.VISUAL,), result.dominantDimensions)
     self.assertEqual(
-      "learning-preference-count-v1",
+      "learning-preference-entropy-v2",
       result.algorithmVersion,
     )
+    self.assertIsNotNone(result.confidence)
+    self.assertIsNotNone(result.preferenceStrength)
+    self.assertGreater(result.preferenceStrength, 0.0)
+
+  def testReturnsMaxPreferenceStrengthForSingleMode(self):
+    """所有证据集中在单一模式时偏好强度应接近一。"""
+    events = [
+      self.makeEvent(f"visual-{index}", "visual")
+      for index in range(10)
+    ]
+
+    result = calculateLearningPreference(events)
+
+    self.assertAlmostEqual(1.0, result.preferenceStrength)
+
+  def testReturnsLowPreferenceStrengthForBalancedDistribution(self):
+    """各模式均等分布时偏好强度应较低。"""
+    events = []
+    identifier = 0
+    for mode in LearningMode:
+      for _ in range(3):
+        events.append(self.makeEvent(f"event-{identifier}", mode.value))
+        identifier += 1
+
+    result = calculateLearningPreference(events)
+
+    self.assertEqual(12, result.evidenceCount)
+    self.assertLess(result.preferenceStrength, 0.3)
+
+  def testConfidenceScalesWithEvidenceCount(self):
+    """证据越多置信度应越高。"""
+    fewerEvents = [
+      self.makeEvent(f"visual-{index}", "visual")
+      for index in range(10)
+    ]
+    moreEvents = [
+      self.makeEvent(f"extra-{index}", "visual")
+      for index in range(20)
+    ]
+
+    fewerResult = calculateLearningPreference(fewerEvents)
+    moreResult = calculateLearningPreference(moreEvents)
+
+    self.assertGreater(moreResult.confidence, fewerResult.confidence)
 
   def testKeepsVectorButHidesDominantDimensionWhenInsufficient(self):
     """不足十条证据时应保留向量但不输出优势维度。"""

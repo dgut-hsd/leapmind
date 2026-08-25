@@ -1,6 +1,8 @@
 package com.treepeople.leapmindtts.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.treepeople.leapmindtts.pojo.entity.LessonSession;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -58,6 +60,18 @@ public interface LessonSessionMapper extends BaseMapper<LessonSession> {
      */
     @Select("SELECT * FROM lesson_sessions WHERE processing_status = #{status} ORDER BY created_at DESC")
     List<LessonSession> selectByStatus(@Param("status") String status);
+
+    /**
+     * 分页查询指定状态的会话（status 为 null 时查询所有）
+     */
+    @Select("<script>"
+            + "SELECT * FROM lesson_sessions "
+            + "<where>"
+            + "<if test='status != null and status != \"\"'>processing_status = #{status}</if>"
+            + "</where>"
+            + "ORDER BY created_at DESC"
+            + "</script>")
+    IPage<LessonSession> selectByStatusPage(Page<LessonSession> page, @Param("status") String status);
     
     /**
      * 更新会话状态
